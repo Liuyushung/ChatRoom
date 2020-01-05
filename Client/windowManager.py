@@ -50,8 +50,10 @@ class WinManager():
         self.Run()
         
     def _isCmd(self, data):
-        tmp = True if data[0] == '/' else tmp = False
-        return tmp
+        if data[0] == '/':
+            return True 
+        else:
+            return False
     
     def _getCmd(self, data):
         data = data[1:]     # Delete the started '/'
@@ -77,6 +79,15 @@ class WinManager():
         for winInfo in self.winList:
             if winName == winInfo[1]:
                 return winInfo[3]
+        return None
+    
+    def _delWindowByWID(self, winID):
+        idx = 0
+        for winInfo in self.winList:
+            if winInfo[0] == winID:
+                self.winList.pop(idx)
+                break
+            idx += 1
     
     def _degShowWinList(self):
         for winInfo in self.winList:
@@ -94,11 +105,17 @@ class WinManager():
                 cmd, msg = self._getCmd(data)
             else:
                 # No command, the data is pure message
-                cmd = 'B' if winType == 'Public' else cmd = 'P'
+                if winType == 'Public':
+                    cmd = 'B' 
+                else:
+                    cmd = 'P'
                 msg = data
-
             # Send user input to client process
             self.qToClient.put( (cmd, winName, msg) )
+            # Sub Window's thread need to leave
+            if winType != 'Public' and cmd == 'Q':
+                self._delWindowByWID(winID)
+                break
     
     def _getFromClient(self):
         """ Run another thread, In Run function """
@@ -111,9 +128,9 @@ class WinManager():
                 win = self._getWindowByName('Hall')
             else:
                 win = self._getWindowByName(sender)
-            #win = self._getWindowByName('Hall') if winType == 'Public' else win = self._getWindowByName(sender)
             #win.putWindowMsg(msg)
-            win.outputQueue.put(msg)
+            if win != None:
+                win.outputQueue.put(msg)
 
     def activeWindow(self, WName):
         for winInfo in self.winList:

@@ -61,7 +61,7 @@ class ChatClient():
         pass
 
     def _setName(self):
-        self.name = self.winManager.popUpWindow('AskS', 'Get Name', 'What\'s your name?')
+        self.name = self.winManager.popUpWindow('AskS', 'Name', 'What\'s your name?')
         if not self.name:
             exit(1)
 
@@ -128,6 +128,8 @@ class ChatClient():
             if cmd == 'B':
                 self.qToWinMan.put( ('Public', sender, msg) )
             elif cmd == 'P':
+                self.qToWinMan.put( ('Private', sender, msg) )
+            elif cmd == 'PQ':
                 self.qToWinMan.put( ('Private', sender, msg) )
             elif cmd == 'N':
                 onlineList = msg.split('\n')

@@ -50,17 +50,33 @@ class ChatServer():
                 self.broadcastList.pop(i)
                 break
         # Fourth delete from Private list
-        pass
+        self._deleteFromPriList(user.name)
     
-    def _deleteFromPriList(self, pname1, pname2):
-        """ 考慮一個人同時和多人聊天 """
-        i = 0
-        for pair in self.privateList:
-            if (pair[0].name == pname1 and pair[1].name == pname2) or \
-            (pair[0].name == pname2 and pair[1].name == pname1):
-                self.privateList.pop(i)
-                break
-            i += 1    
+    def _deleteFromPriList(self, pname1, pname2=None):
+        """
+        Two Case:
+        One is called cause Private Talk.
+        One is called cause User offline.
+        """
+        if not pname2:
+            # This is called by User offline.
+            popList = []
+            i = 0
+            for pair in self.privateList:
+                if pname1 in pair:
+                    popList.insert(0, i)
+                i += 1
+            for popIndex in popList:
+                self.privateList.pop(popIndex)
+        else:
+            # This is called by Private Talk.
+            i = 0
+            for pair in self.privateList:
+                if (pair[0].name == pname1 and pair[1].name == pname2) or \
+                (pair[0].name == pname2 and pair[1].name == pname1):
+                    self.privateList.pop(i)
+                    break
+                i += 1
         pass
     
     """ Function are related to Boolean """
@@ -102,9 +118,10 @@ class ChatServer():
                 print(f'{pair[0].name} and {pair[1].name}')
 
     """ Function are related to Send """
-    def _sendPrivateTo(self, sender, receiver, msg):
+    def _sendPrivateTo(self, sender, receiver, msg, cmd):
+        # cmd is P or PQ. P is user send; PQ is server send
         if self._isInPriList((sender, receiver)):
-            data = json.dumps( ('P', sender, msg) )
+            data = json.dumps( (cmd, sender, msg) )
             data = data.encode()
             self._getPersonByName(receiver).sock.send(data)
         
@@ -116,10 +133,9 @@ class ChatServer():
     def _sendHelpMsg(self, user):
         msg = """
         Help Prompt
-        /H -> Get help prompt.
-        /W -> Get Who's online list.
-        /Q -> Leave this chat room.
-        /N -> New a chat room with somebody else
+        You can talk to everyone in the hall.
+        You can choose one user to chat in another private room.
+        But you can't leave the hall.
         """
         data = json.dumps( ('H', 'Server', msg) )
         user.sock.send(data.encode())
@@ -198,7 +214,7 @@ class ChatServer():
             elif cmd == 'P':
                 """ Private talk command """
                 sender, peer = sender.split(' ')
-                self._sendPrivateTo(sender, peer, msg)
+                self._sendPrivateTo(sender, peer, msg, cmd)
             elif cmd == 'Q':
                 """ User need to leave """
                 self._userOffline(user)
@@ -207,16 +223,30 @@ class ChatServer():
             elif cmd == 'PQ':
                 """ User leave Private talk """
                 # msg is peer's name
+                peer = msg
+                msg = '{} has left the chat room...'.format(sender)
+                # Send PQ to peer
+                self._sendPrivateTo(sender, peer, msg, cmd)
+                # msg is peer's name
                 self._deleteFromPriList(user.name, msg)
                 self._degShowPList()
-                # Send PQ to peer
-                pass
+                
             elif cmd == 'W':
                 """ Who is online command """
                 self._sendWhoOnline(user, cmd)
             else:
                 self._sendCmdNotFound(user)
-              
+    
+    def _SuperUser(self):
+        while True:
+            command = input()
+            if command == 'showB':
+                self._degShowBList()
+            elif command == 'showP':
+                self._degShowPList()
+            else:
+                print('Command Not Found...')
+    
     """ Public Function """
     def Run(self):
         listenSock = socket.socket(*self.sockInfo[:2])
@@ -227,6 +257,10 @@ class ChatServer():
         tB = threading.Thread(name='ServerBroadcast', target=self._broadcast)
         tB.daemon = True
         tB.start()
+        
+        tS = threading.Thread(name='SuperUser', target=self._SuperUser)
+        tS.daemon = True
+        tS.start()
         
         ID_num = 1  # Give to each connected person, it's an unique number
         while True:
@@ -242,8 +276,11 @@ class ChatServer():
             tR = threading.Thread(name=f"{name}'s Recv", target=self._asyncRecv, args=(user,))
             tR.daemon = True
             tR.start()
+            # Send Welcome Message, 如果有人名字叫Server....
+            self.sendQueue.put( ('Server', 'Welcome {} join the chat room!'.format(name)) )
             # Increment ID number
             ID_num += 1
+            
 """ End Chat Server """
 
 if __name__ == '__main__':

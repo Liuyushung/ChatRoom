@@ -50,6 +50,7 @@ class ChatWindow():
         # Set up Widget
         self._setMainWindow()
         self._setWidget()
+        self._setMenubar()
         self._setWidgetPosition()
         self._setEvent()
         # Run window
@@ -58,19 +59,11 @@ class ChatWindow():
     """ Start Set Function """
     def _setMainWindow(self):
         self.mainWindow = tk.Tk()
-        self.mainWindow.geometry('500x450')
+        self.mainWindow.geometry('500x450+500+200')
         self.mainWindow.title(self.winName)
         self.mainWindow['bg'] = self.BgColor        
     
-    def _setWidget(self):  
-        self.menubar = tk.Menu(self.mainWindow)
-        self.filemenu = tk.Menu(self.menubar, tearoff=0)
-        self.filemenu.add_command(label="Open", command=tk.filedialog.askopenfilename)
-        self.filemenu.add_separator()
-        self.filemenu.add_command(label="Exit", command=self.closeWindow)
-        self.menubar.add_cascade(label='File', menu=self.filemenu)
-        self.mainWindow.config(menu=self.menubar)
-        
+    def _setWidget(self):        
         for i in range(3):
             self.frameList.append(tk.Frame(self.mainWindow, bg=self.BgColor))
         
@@ -87,7 +80,20 @@ class ChatWindow():
         self.sendButton = tk.Button(self.frameList[2], text="Send", font=self.FontSetting,
                                     bg='#99BBFF', relief='ridge', borderwidth=3,
                                     command=self._putInput)
+    
+    def _setMenubar(self):
+        self.menubar = tk.Menu(self.mainWindow)
         
+        self.helpmenu = tk.Menu(self.menubar, tearoff=0)
+        self.helpmenu.add_command(label='Get help', command=lambda:self.inputQueue.put('/H'))
+        self.helpmenu.add_command(label='Who\'s Online', command=lambda:self.inputQueue.put('/W'))
+        self.helpmenu.add_command(label='Talk with...', command=lambda:self.inputQueue.put('/N'))
+        self.helpmenu.add_separator()
+        self.helpmenu.add_command(label='Exit', command=lambda:self.inputQueue.put('/Q'))
+        
+        self.menubar.add_cascade(label='Help', menu=self.helpmenu)
+        self.mainWindow.config(menu=self.menubar)
+    
     def _setWidgetPosition(self):
         for frame in self.frameList:
             frame.pack()
@@ -131,10 +137,11 @@ class ChatWindow():
     
     def _selectUserPopWindow(self, title, userList):
         def sendResultToWinMan():
+            # Format of result is " id. UserName    "
             result = getSelected.get()
             logging.debug('In select pop window get the result is {}'.format(result))
             self.inputQueue.put('/NREQ {}'.format(result))
-            tmp = result.split('. ')[1]
+            tmp = result.split('. ')[1].split(' ')[0]
             self.popUpWindow('Info', 'Server Reply', f'Wait for {tmp}\'s answer ...')
             popWin.destroy()
         # Format user List
@@ -210,11 +217,29 @@ class PriChatWindow(ChatWindow):
         self.BgColor = '#33FFAA'
         super().__init__(winName, inQueue, outQueue, self.BgColor)
         
+        
     def _setMainWindow(self):
         self.mainWindow = tk.Toplevel(self.parent)
         self.mainWindow.title('Talk with ' + self.winName)
-        self.mainWindow.geometry('500x470')
+        self.mainWindow.geometry('500x450')
         self.mainWindow['bg'] = self.BgColor
+        
+    def _setWidget(self):
+        super()._setWidget()
+        self.onlineLabel['text'] = 'You and {} '.format(self.winName)
+    
+    def _setMenubar(self):
+        self.menubar = tk.Menu(self.mainWindow)
+        
+        self.helpmenu = tk.Menu(self.menubar, tearoff=0)
+        self.helpmenu.add_command(label='Get help', command=lambda:self.inputQueue.put('/H'))
+        self.helpmenu.add_command(label='Who\'s Online', command=lambda:self.inputQueue.put('/W'), state='disabled')
+        self.helpmenu.add_command(label='Talk with...', command=lambda:self.inputQueue.put('/N'), state='disabled')
+        self.helpmenu.add_separator()
+        self.helpmenu.add_command(label='Exit', command=lambda:self.inputQueue.put('/Q'))
+        
+        self.menubar.add_cascade(label='Help', menu=self.helpmenu)
+        self.mainWindow.config(menu=self.menubar)
     
     def runWindow(self):
         # Run Async Output thread
