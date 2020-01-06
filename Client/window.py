@@ -6,12 +6,12 @@ Created on Wed Dec 18 19:49:40 2019
 """
 
 import tkinter as tk
-from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import simpledialog
 from tkinter import ttk
 from queue import Queue
 from threading import Thread
+from winHeader import WindowHeader
 import logging
 
 logging.basicConfig(
@@ -27,8 +27,10 @@ class ChatWindow():
     One Text
     One Entry and one button
     """
-    def __init__(self, winName, inQueue=Queue(), outQueue=Queue(), BgColor=None):
+    def __init__(self, winID, winName, winType,inQueue=Queue(), outQueue=Queue(), BgColor=None):
+        self.winID = winID
         self.winName = winName
+        self.winType = winType
         self.inputQueue = inQueue       # This window input field
         self.outputQueue = outQueue     # This window output field
         self.QuitFlag = False           # There are many to close window could need to prevent send /Q duplicate
@@ -74,22 +76,27 @@ class ChatWindow():
         self.outputText = tk.Text(self.frameList[1], font=self.FontSetting, height=17, width=48,
                                   state=tk.DISABLED, relief='solid')
         self.outputText.tag_config('self', foreground='blue', justify=tk.RIGHT)
+        self.outputText.tag_config('server', foreground='red')
         
         self.inputEntry = tk.Entry(self.frameList[2], font=self.FontSetting, width=38)
         
         self.sendButton = tk.Button(self.frameList[2], text="Send", font=self.FontSetting,
                                     bg='#99BBFF', relief='ridge', borderwidth=3,
-                                    command=self._putInput)
+                                    command=self._getInput)
     
     def _setMenubar(self):
+        def funExit():
+            self.QuitFlag = True
+            self._sendMessage('Q')
+            
         self.menubar = tk.Menu(self.mainWindow)
         
         self.helpmenu = tk.Menu(self.menubar, tearoff=0)
-        self.helpmenu.add_command(label='Get help', command=lambda:self.inputQueue.put('/H'))
-        self.helpmenu.add_command(label='Who\'s Online', command=lambda:self.inputQueue.put('/W'))
-        self.helpmenu.add_command(label='Talk with...', command=lambda:self.inputQueue.put('/N'))
+        self.helpmenu.add_command(label='Get help', command=lambda:self._sendMessage('H'))
+        self.helpmenu.add_command(label='Who\'s Online', command=lambda:self._sendMessage('W'))
+        self.helpmenu.add_command(label='Talk with...', command=lambda:self._sendMessage('N'))
         self.helpmenu.add_separator()
-        self.helpmenu.add_command(label='Exit', command=lambda:self.inputQueue.put('/Q'))
+        self.helpmenu.add_command(label='Exit', command=funExit)
         
         self.menubar.add_cascade(label='Help', menu=self.helpmenu)
         self.mainWindow.config(menu=self.menubar)
@@ -104,45 +111,69 @@ class ChatWindow():
 
     def _enterEvent(self, event):
         # User can press Enter to send Message
-        self._putInput()
+        self._getInput()
         
     def _setEvent(self):
         self.mainWindow.bind('<Return>', self._enterEvent)
         self.mainWindow.protocol('WM_DELETE_WINDOW', self.closeWindow)
     
     """ End Set Function """
-            
+    def _sendMessage(self, cmd, msg=None, peer=None):
+        header = WindowHeader()
+        header.setHeader(self.winID, self.winName, self.winType, cmd)
+        if peer:
+            header.setOption(peer=peer)
+        self.inputQueue.put((header, msg))
+        
     def _asyncInsertOutput(self):
+        serverType = '[    Server]'
         while True:
             msg = self.outputQueue.get()
-            self.outputText['state'] = tk.NORMAL
-            self.outputText.insert('end', msg)
-            self.outputText['state'] = tk.DISABLED
-        
-    def _putInput(self):
+            if msg[:12] == serverType:
+                self.outputText['state'] = tk.NORMAL
+                self.outputText.insert('end', msg, 'server')
+                self.outputText['state'] = tk.DISABLED
+            else:
+                self.outputText['state'] = tk.NORMAL
+                self.outputText.insert('end', msg)
+                self.outputText['state'] = tk.DISABLED
+            
+    def _getInput(self):
         msg = self.inputEntry.get()
+        """
         if msg == '/Q':
             self.QuitFlag = True
         if msg:
             self._insertSelfMsg(msg)
             self.inputQueue.put(msg)
             self.inputEntry.delete(0, tk.END)
-    
+        """
+        if msg:
+            self._insertSelfMsg(msg)
+            self.inputEntry.delete(0, tk.END)
+            
+            if self.winType == 'Public':
+                self._sendMessage('B', msg)
+            elif self.winType == 'Private':
+                self._sendMessage('P', msg, peer=self.winName)
+            else:
+                self._sendMessage('G', msg)
+        
     def _insertSelfMsg(self, msg):
-        if msg[0] != '/':
-            msg += '\n'
-            self.outputText['state'] = tk.NORMAL
-            self.outputText.insert(tk.END, msg, 'self')
-            self.outputText['state'] = tk.DISABLED
+        msg += '\n'
+        self.outputText['state'] = tk.NORMAL
+        self.outputText.insert(tk.END, msg, 'self')
+        self.outputText['state'] = tk.DISABLED
     
     def _selectUserPopWindow(self, title, userList):
         def sendResultToWinMan():
-            # Format of result is " id. UserName    "
+            # Format of result is " id. UserName    ", Server will use this pattern
             result = getSelected.get()
             logging.debug('In select pop window get the result is {}'.format(result))
-            self.inputQueue.put('/NREQ {}'.format(result))
-            tmp = result.split('. ')[1].split(' ')[0]
-            self.popUpWindow('Info', 'Server Reply', f'Wait for {tmp}\'s answer ...')
+            #self.inputQueue.put('/NREQ {}'.format(result))
+            self._sendMessage('NREQ', peer=result) 
+            peerName = result.split('. ')[1].split(' ')[0]
+            self.popUpWindow('Info', 'Server Reply', f'Wait for {peerName}\'s answer ...')
             popWin.destroy()
         # Format user List
         for i in range(len(userList)):
@@ -194,7 +225,12 @@ class ChatWindow():
     
     def closeWindow(self):
         if not self.QuitFlag:
-            self.inputQueue.put('/Q')
+            if self.winType == 'Public':
+                self._sendMessage('Q')
+            elif self.winType == 'Private':
+                self._sendMessage('PQ', peer=self.winName)
+            else:
+                self._sendMessage('GQ')
         self.mainWindow.destroy()
     
     def runWindow(self):
@@ -212,10 +248,10 @@ class PriChatWindow(ChatWindow):
     Simply Inherit the Chatting Window
     Override the setMainWindow and runWindow
     """
-    def __init__(self, parent, winName, inQueue=Queue(), outQueue=Queue()):
+    def __init__(self, parent, winID, winName, winType, inQueue=Queue(), outQueue=Queue()):
         self.parent = parent
         self.BgColor = '#33FFAA'
-        super().__init__(winName, inQueue, outQueue, self.BgColor)
+        super().__init__(winID, winName, winType, inQueue, outQueue, self.BgColor)
         
         
     def _setMainWindow(self):
@@ -229,14 +265,18 @@ class PriChatWindow(ChatWindow):
         self.onlineLabel['text'] = 'You and {} '.format(self.winName)
     
     def _setMenubar(self):
+        def funExit():
+            self.QuitFlag = True
+            self._sendMessage('PQ', peer=self.winName)
+        
         self.menubar = tk.Menu(self.mainWindow)
         
         self.helpmenu = tk.Menu(self.menubar, tearoff=0)
-        self.helpmenu.add_command(label='Get help', command=lambda:self.inputQueue.put('/H'))
-        self.helpmenu.add_command(label='Who\'s Online', command=lambda:self.inputQueue.put('/W'), state='disabled')
-        self.helpmenu.add_command(label='Talk with...', command=lambda:self.inputQueue.put('/N'), state='disabled')
+        self.helpmenu.add_command(label='Get help', command=lambda:self._sendMessage('H'))
+        self.helpmenu.add_command(label='Who\'s Online', command=lambda:self._sendMessage('W'), state='disabled')
+        self.helpmenu.add_command(label='Talk with...', command=lambda:self._sendMessage('N'), state='disabled')
         self.helpmenu.add_separator()
-        self.helpmenu.add_command(label='Exit', command=lambda:self.inputQueue.put('/Q'))
+        self.helpmenu.add_command(label='Exit', command=funExit)
         
         self.menubar.add_cascade(label='Help', menu=self.helpmenu)
         self.mainWindow.config(menu=self.menubar)

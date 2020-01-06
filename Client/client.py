@@ -39,6 +39,7 @@ Client 端程式負責透過網路連線交換訊息
 from windowManager import WinManager
 from threading import Thread
 from queue import Queue
+from winHeader import WindowHeader
 import socket, json, logging, time
 
 MAXBUF = 1024
@@ -80,31 +81,46 @@ class ChatClient():
         """ Run in another thread """
         while True:
             # Get data from Window Manager
-            cmd, winName, msg = self.qFromWinMan.get()
-            logging.debug(f'Deal cmd is {cmd}, msg is {msg}')
-            # These command don't need to handle H, W, B, P, N
-            if cmd == 'CNF':
-                self.winManager.popUpWindow('Info', 'Command Not Found!!', 'Try to type /H to get help.')
-                continue
-            elif cmd == 'P':
-                data = json.dumps( (cmd, f'{self.name} {winName}', msg) )
+            #cmd, winName, msg = self.qFromWinMan.get()
+            #logging.debug(f'In Client Deal cmd is {cmd}, msg is {msg}')
+            header, msg = self.qFromWinMan.get()
+            
+            if header.command == 'H':
+                pass
+            elif header.command == 'W':
+                pass
+            elif header.command == 'B':
+                pass
+            elif header.command == 'N':
+                pass
+            elif header.command == 'NREQ':
+                msg = header.peer
+            elif header.command == 'P':
+                # Name is pair
+                data = json.dumps( (header.command, f'{self.name} {header.peer}', msg) )
                 data = data.encode()
                 self.sock.send(data)
                 continue
-            elif cmd == 'Q' and winName != 'Hall':
-                cmd = 'PQ'
+            elif header.command == 'PQ':
+                # This means user leave pri room, should talk to server and close window
+                """
                 self.winManager.closeWindow(winName)
                 msg = winName
+                """
+                self.winManager.closeWindowById(header.winID)
+                msg = header.peer
+                logging.debug(f'In Client After Q, cmd is {header.command}, msg is {msg}')                
+            
             
             # Transform data
-            data = json.dumps( (cmd, self.name, msg) )
+            data = json.dumps( (header.command, self.name, msg) )
             data = data.encode()
             # Send data
             self.sock.send(data)
             
-            if cmd == 'Q':
-                logging.debug(f'Client handle cmd "{cmd}"')
-                self.winManager.closeWindow(winName)
+            if header.command == 'Q':
+                # After tell the server user want to leave, close window
+                self.winManager.closeWindowById(header.winID)
                 self.sock.close()
                 time.sleep(3)
                 exit()
@@ -114,6 +130,7 @@ class ChatClient():
         Run in another thread
         Server 指示該做甚麼
         """
+        header = WindowHeader()
         while True:
             # Get reply from sever
             data = self.sock.recv(MAXBUF)
@@ -126,19 +143,28 @@ class ChatClient():
                 # data = ''
                 break
             if cmd == 'B':
-                self.qToWinMan.put( ('Public', sender, msg) )
+                header.setHeader(None, None, 'Public', 'B')
+                header.setOption(sender=sender)
+                self.qToWinMan.put( (header, msg) )
+                #self.qToWinMan.put( ('Public', sender, msg) )
             elif cmd == 'P':
-                self.qToWinMan.put( ('Private', sender, msg) )
+                header.setHeader(None, None, 'Private', 'P')
+                header.setOption(sender=sender)
+                self.qToWinMan.put( (header, msg) )
+                #self.qToWinMan.put( ('Private', sender, msg) )
             elif cmd == 'PQ':
-                self.qToWinMan.put( ('Private', sender, msg) )
+                header.setHeader(None, None, 'Private', 'PQ')
+                header.setOption(sender=sender)
+                self.qToWinMan.put( (header, msg) )
+                #self.qToWinMan.put( ('Private', sender, msg) )
             elif cmd == 'N':
                 onlineList = msg.split('\n')
-                logging.debug('In Reply cmd is N, List is {}'.format(onlineList))
+                #logging.debug('In Reply cmd is N, List is {}'.format(onlineList))
                 self.winManager.popUpWindow('AskW', 'Select User', onlineList)
                 pass
             elif cmd == 'NREQ':
                 response = self.winManager.popUpWindow('AskQ', 'Privat talk', msg)
-                logging.debug('Response is {}'.format(response))
+                #logging.debug('Response is {}'.format(response))
                 response = response + ' ' + sender
                 data = json.dumps( ('NREQ', self.name, response) )
                 self.sock.send(data.encode())
@@ -152,6 +178,8 @@ class ChatClient():
                     # Privat Window name is sender name
                     self.winManager.newWindow(sender, 'Private')
                     self.winManager.activeWindow(sender)
+            elif cmd == 'ERROR':
+                self.winManager.popUpWindow('Info', 'Can\'t Open Room', msg)
             elif cmd == 'H':
                 self.winManager.popUpWindow('Info', 'Help Message', msg)
             elif cmd == 'W':

@@ -31,6 +31,7 @@ class ChatServer():
         self.broadcastList.append(user)
     
     def _addPairToPriList(self, person1, person2):
+        """ person1 and person2 are Person Instance """
         self.privateList.append( (person1, person2) )
         logging.info('{Show Private List}')
         self._degShowPList()
@@ -51,6 +52,8 @@ class ChatServer():
                 break
         # Fourth delete from Private list
         self._deleteFromPriList(user.name)
+        # Send offline message to Hall
+        self._serverBroadcast('{} has left the chat room!'.format(user.name), user.name)
     
     def _deleteFromPriList(self, pname1, pname2=None):
         """
@@ -63,7 +66,7 @@ class ChatServer():
             popList = []
             i = 0
             for pair in self.privateList:
-                if pname1 in pair:
+                if (pname1 == pair[0].name) or (pname1 == pair[1].name):
                     popList.insert(0, i)
                 i += 1
             for popIndex in popList:
@@ -74,6 +77,7 @@ class ChatServer():
             for pair in self.privateList:
                 if (pair[0].name == pname1 and pair[1].name == pname2) or \
                 (pair[0].name == pname2 and pair[1].name == pname1):
+                    logging.debug('Close the PriWindow, {} and {} '.format(pname1, pname2))
                     self.privateList.pop(i)
                     break
                 i += 1
@@ -112,10 +116,10 @@ class ChatServer():
     def _degShowPList(self):
         print('Now who in private tlak list...')
         if not len(self.privateList):
-            print('Nobody in Private List...')
+            print('  Nobody in Private List...')
         else:
             for pair in self.privateList:
-                print(f'{pair[0].name} and {pair[1].name}')
+                print(f'  {pair[0].name} and {pair[1].name}')
 
     """ Function are related to Send """
     def _sendPrivateTo(self, sender, receiver, msg, cmd):
@@ -165,15 +169,31 @@ class ChatServer():
             for user in self.broadcastList:
                 if user.name != sender:
                     user.sock.send(bdata)
-    
+
+    def _serverBroadcast(self, msg, senderName=None):
+        data = json.dumps( ('B', 'Server', msg) )
+        bdata = data.encode()
+        
+        for user in self.broadcastList:
+            if user.name != senderName:
+                user.sock.send(bdata)
+                
+    """ Check function """
+    def _checkPriIsExist(self, sender, peer):
+        for pair in self.privateList:
+            if (pair[0].id == sender.id and pair[1].id == peer.id) or \
+                (pair[0].id == peer.id and pair[1].id == peer.id):
+                    return True
+        return False
+            
     """ Function are related to Receive """
     def _asyncRecv(self, user):
-        # user is person instance
+        # !! user is person instance
         # user is sender
         while True:
             # data is (Command, Sender's name, Message)
             data = user.sock.recv(MAXBUF)
-            cmd, sender, msg = json.loads(data.decode())
+            cmd, sender, msg = json.loads(data.decode())    # sender == user.name
             logging.debug(f'In Async Recv cmd is {cmd}; sender is {sender}; msg is {msg}')
             
             if cmd == 'B':
@@ -190,7 +210,6 @@ class ChatServer():
                 if msg[0] == 'y':    
                     # This belong to another user's response
                     receiver = msg.split(' ')[1]    # [0] is yes, [1] is peer name
-                    logging.debug('{} and {} will go private list'.format(sender, receiver))
                     # 新增到 Privat talk List
                     self._addPairToPriList(self._getPersonByName(receiver), user)
                     # Send NREP command to both
@@ -209,7 +228,15 @@ class ChatServer():
                     # Send the new private talk request to another user
                     pID = int(msg.split('. ')[0])
                     logging.debug('pID is {}'.format(pID))
-                    self._sendNewPriReq(sender, self._getPersonByID(pID), 'NREQ')
+                    peer = self._getPersonByID(pID)
+                    # Before sending the request, check if the room has been open
+                    if self._checkPriIsExist(user, peer):
+                        # It has been opened
+                        data = json.dumps( ('ERROR', sender, 'You have been token with {}'.format(peer.name)))
+                        user.sock.send(data.encode())
+                    else:
+                        # It is not opened
+                        self._sendNewPriReq(sender, peer, 'NREQ')
                 pass
             elif cmd == 'P':
                 """ Private talk command """
@@ -228,7 +255,7 @@ class ChatServer():
                 # Send PQ to peer
                 self._sendPrivateTo(sender, peer, msg, cmd)
                 # msg is peer's name
-                self._deleteFromPriList(user.name, msg)
+                self._deleteFromPriList(user.name, peer)
                 self._degShowPList()
                 
             elif cmd == 'W':
@@ -264,7 +291,7 @@ class ChatServer():
         
         ID_num = 1  # Give to each connected person, it's an unique number
         while True:
-            print('Waiting for connection...')
+            #print('Waiting for connection...')
             conn_sock, peer = listenSock.accept()
             # Create person info
             name = conn_sock.recv(MAXBUF).decode()
@@ -276,8 +303,8 @@ class ChatServer():
             tR = threading.Thread(name=f"{name}'s Recv", target=self._asyncRecv, args=(user,))
             tR.daemon = True
             tR.start()
-            # Send Welcome Message, 如果有人名字叫Server....
-            self.sendQueue.put( ('Server', 'Welcome {} join the chat room!'.format(name)) )
+            # Server boradcast message
+            self._serverBroadcast('Welcome {} join the chat room!'.format(name))
             # Increment ID number
             ID_num += 1
             

@@ -33,6 +33,7 @@ from window import ChatWindow
 from window import PriChatWindow
 from queue import Queue
 from threading import Thread
+from winHeader import WindowHeader
 import logging
 
 logging.basicConfig(
@@ -86,6 +87,8 @@ class WinManager():
         for winInfo in self.winList:
             if winInfo[0] == winID:
                 self.winList.pop(idx)
+                logging.debug('Pop the Window WName: {}, WType: {}'.format(
+                    winInfo[1], winInfo[2]))
                 break
             idx += 1
     
@@ -99,35 +102,34 @@ class WinManager():
         """ Run another thread, In newWindow function """
         while True:
             # Get user input from window
-            data = window.getWindowMsg()
-            if self._isCmd(data):
-                # The command has argument could be None or Someone's name(private talke)
-                cmd, msg = self._getCmd(data)
-            else:
-                # No command, the data is pure message
-                if winType == 'Public':
-                    cmd = 'B' 
-                else:
-                    cmd = 'P'
-                msg = data
+            #data = window.getWindowMsg()
+            header, msg = window.getWindowMsg()
+            
             # Send user input to client process
-            self.qToClient.put( (cmd, winName, msg) )
+            self.qToClient.put( (header, msg) )
+            #self.qToClient.put( (cmd, winName, msg) )
+            """
             # Sub Window's thread need to leave
             if winType != 'Public' and cmd == 'Q':
                 self._delWindowByWID(winID)
                 break
-    
+            """
+            
     def _getFromClient(self):
         """ Run another thread, In Run function """
         while True:
             # Get data from client process 
-            winType, sender, msg = self.qFromClient.get()
-            msg = f'[{sender:>10s}]:\n    {msg}\n'
+            #winType, sender, msg = self.qFromClient.get()
+            header, msg = self.qFromClient.get()
+            msg = f'[{header.sender:>10s}]:\n    {msg}\n'
             
-            if winType == 'Public':
+            if header.winType == 'Public':
                 win = self._getWindowByName('Hall')
+            elif header.winType == 'Private':
+                win = self._getWindowByName(header.sender)
             else:
-                win = self._getWindowByName(sender)
+                # Group
+                pass
             #win.putWindowMsg(msg)
             if win != None:
                 win.outputQueue.put(msg)
@@ -138,9 +140,22 @@ class WinManager():
                 winInfo[3].runWindow()
 
     def closeWindow(self, WName):
+        i = 0
         for winInfo in self.winList:
             if winInfo[1] == WName:
                 winInfo[3].closeWindow()
+                self.winList.pop(i)
+                break
+            i+=1 
+    
+    def closeWindowById(self, winID):
+        i = 0
+        for winInfo in self.winList:
+            if winInfo[0] == winID:
+                winInfo[3].closeWindow()
+                self.winList.pop(i)
+                break
+            i+=1
 
     def newWindow(self, WName, WType):
         """
@@ -148,10 +163,10 @@ class WinManager():
         Window Type is either Public or Private
         """
         if WType == 'Public':
-            winObj = ChatWindow(WName, Queue(), Queue())
+            winObj = ChatWindow(self.winID, WName, WType, Queue(), Queue())
         else:
             winObj = PriChatWindow(self._getWindowByName('Hall').mainWindow,
-                                   WName, Queue(), Queue())
+                                   self.winID, WName, WType, Queue(), Queue())
         
         winInfo = (self.winID, WName, WType, winObj)
         self.winList.append(winInfo)
@@ -161,8 +176,8 @@ class WinManager():
         tW.daemon = True
         tW.start()
         
-        logging.info('After new window show now window list information ...')
-        self._degShowWinList()
+        #logging.info('After new window show now window list information ...')
+        #self._degShowWinList()
     
     def popUpWindow(self, which, title, msg):
         win = self._getWindowByName('Hall')
