@@ -28,6 +28,7 @@ class ChatWindow():
     One Entry and one button
     """
     def __init__(self, winID, winName, winType,inQueue=Queue(), outQueue=Queue(), BgColor=None):
+        #self.priID, self.groupID = None, None
         self.winID = winID
         self.winName = winName
         self.winType = winType
@@ -118,11 +119,12 @@ class ChatWindow():
         self.mainWindow.protocol('WM_DELETE_WINDOW', self.closeWindow)
     
     """ End Set Function """
-    def _sendMessage(self, cmd, msg=None, peer=None):
+    def _sendMessage(self, cmd, msg=None, PID=None):
         header = WindowHeader()
         header.setHeader(self.winID, self.winName, self.winType, cmd)
-        if peer:
-            header.setOption(peer=peer)
+        if PID:
+            header.setOption(pID=PID)
+        
         self.inputQueue.put((header, msg))
         
     def _asyncInsertOutput(self):
@@ -140,14 +142,6 @@ class ChatWindow():
             
     def _getInput(self):
         msg = self.inputEntry.get()
-        """
-        if msg == '/Q':
-            self.QuitFlag = True
-        if msg:
-            self._insertSelfMsg(msg)
-            self.inputQueue.put(msg)
-            self.inputEntry.delete(0, tk.END)
-        """
         if msg:
             self._insertSelfMsg(msg)
             self.inputEntry.delete(0, tk.END)
@@ -155,7 +149,7 @@ class ChatWindow():
             if self.winType == 'Public':
                 self._sendMessage('B', msg)
             elif self.winType == 'Private':
-                self._sendMessage('P', msg, peer=self.winName)
+                self._sendMessage('P', msg, PID=self.priID)
             else:
                 self._sendMessage('G', msg)
         
@@ -170,8 +164,7 @@ class ChatWindow():
             # Format of result is " id. UserName    ", Server will use this pattern
             result = getSelected.get()
             logging.debug('In select pop window get the result is {}'.format(result))
-            #self.inputQueue.put('/NREQ {}'.format(result))
-            self._sendMessage('NREQ', peer=result) 
+            self._sendMessage('NREQ', msg=result) 
             peerName = result.split('. ')[1].split(' ')[0]
             self.popUpWindow('Info', 'Server Reply', f'Wait for {peerName}\'s answer ...')
             popWin.destroy()
@@ -195,13 +188,16 @@ class ChatWindow():
         comboBox = ttk.Combobox(popWin, width=15, textvariable=getSelected,
                                 state='readonly')
         comboBox['values'] = userList
-        comboBox.current(0)
+        if len(userList) > 0:
+            comboBox.current(0)
         comboBox.pack()
         # Set up Button for ensure or cancel
         yesBtn = tk.Button(popWin, text='Send', command=sendResultToWinMan)
         noBtn = tk.Button(popWin, text='Cancel', command=popWin.destroy)
         yesBtn.pack(side='left')
         noBtn.pack(side='right')
+        if len(userList) == 0:
+            yesBtn['state'] = 'disabled'
     
     def putWindowMsg(self, msg):
         self.outputQueue.put(msg)
@@ -228,7 +224,7 @@ class ChatWindow():
             if self.winType == 'Public':
                 self._sendMessage('Q')
             elif self.winType == 'Private':
-                self._sendMessage('PQ', peer=self.winName)
+                self._sendMessage('PQ', PID=self.priID)
             else:
                 self._sendMessage('GQ')
         self.mainWindow.destroy()
@@ -242,14 +238,17 @@ class ChatWindow():
         self.mainWindow.mainloop()
         logging.info('Window Close')
 
+"******************************************************************************"
+
 class PriChatWindow(ChatWindow):
     """
     This class is for Pop-Up Private Chatting Window
     Simply Inherit the Chatting Window
     Override the setMainWindow and runWindow
     """
-    def __init__(self, parent, winID, winName, winType, inQueue=Queue(), outQueue=Queue()):
+    def __init__(self, parent, privateID, winID, winName, winType, inQueue=Queue(), outQueue=Queue()):
         self.parent = parent
+        self.priID = privateID
         self.BgColor = '#33FFAA'
         super().__init__(winID, winName, winType, inQueue, outQueue, self.BgColor)
         
@@ -267,7 +266,7 @@ class PriChatWindow(ChatWindow):
     def _setMenubar(self):
         def funExit():
             self.QuitFlag = True
-            self._sendMessage('PQ', peer=self.winName)
+            self._sendMessage('PQ', PID=self.priID)
         
         self.menubar = tk.Menu(self.mainWindow)
         

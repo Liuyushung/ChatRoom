@@ -81,8 +81,6 @@ class ChatClient():
         """ Run in another thread """
         while True:
             # Get data from Window Manager
-            #cmd, winName, msg = self.qFromWinMan.get()
-            #logging.debug(f'In Client Deal cmd is {cmd}, msg is {msg}')
             header, msg = self.qFromWinMan.get()
             
             if header.command == 'H':
@@ -93,11 +91,12 @@ class ChatClient():
                 pass
             elif header.command == 'N':
                 pass
-            elif header.command == 'NREQ':
-                msg = header.peer
+            elif header.command == 'NREQ':  # msg is " id. name  "
+                pass           
             elif header.command == 'P':
                 # Name is pair
-                data = json.dumps( (header.command, f'{self.name} {header.peer}', msg) )
+                logging.debug(f'{header.privateID}/{self.name}')
+                data = json.dumps( (header.command, f'{header.privateID}/{self.name}', msg) )
                 data = data.encode()
                 self.sock.send(data)
                 continue
@@ -108,9 +107,8 @@ class ChatClient():
                 msg = winName
                 """
                 self.winManager.closeWindowById(header.winID)
-                msg = header.peer
+                msg = str(header.privateID)
                 logging.debug(f'In Client After Q, cmd is {header.command}, msg is {msg}')                
-            
             
             # Transform data
             data = json.dumps( (header.command, self.name, msg) )
@@ -149,7 +147,8 @@ class ChatClient():
                 #self.qToWinMan.put( ('Public', sender, msg) )
             elif cmd == 'P':
                 header.setHeader(None, None, 'Private', 'P')
-                header.setOption(sender=sender)
+                priID, sender = int(sender.split('/')[0]), sender.split('/')[1]
+                header.setOption(sender=sender, pID=priID)
                 self.qToWinMan.put( (header, msg) )
                 #self.qToWinMan.put( ('Private', sender, msg) )
             elif cmd == 'PQ':
@@ -163,9 +162,9 @@ class ChatClient():
                 self.winManager.popUpWindow('AskW', 'Select User', onlineList)
                 pass
             elif cmd == 'NREQ':
+                #response is yes or no
                 response = self.winManager.popUpWindow('AskQ', 'Privat talk', msg)
-                #logging.debug('Response is {}'.format(response))
-                response = response + ' ' + sender
+                response = response + '/' + sender  # Response is yes(no)/ID/Name
                 data = json.dumps( ('NREQ', self.name, response) )
                 self.sock.send(data.encode())
             elif cmd == 'NREP':
@@ -176,7 +175,8 @@ class ChatClient():
                 else:
                     # Create new Privat Chat Window
                     # Privat Window name is sender name
-                    self.winManager.newWindow(sender, 'Private')
+                    # msg will be PID
+                    self.winManager.newWindow(sender, 'Private', msg)
                     self.winManager.activeWindow(sender)
             elif cmd == 'ERROR':
                 self.winManager.popUpWindow('Info', 'Can\'t Open Room', msg)

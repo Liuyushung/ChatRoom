@@ -49,36 +49,16 @@ class WinManager():
         self.winID = 1
         
         self.Run()
-        
-    def _isCmd(self, data):
-        if data[0] == '/':
-            return True 
-        else:
-            return False
-    
-    def _getCmd(self, data):
-        data = data[1:]     # Delete the started '/'
-        if data[0] == 'H':
-            # Help command
-            return ('H', 'None')
-        elif data[0:4] == 'NREQ':
-            return ('NREQ', data[5:])
-        elif data[0] == 'N':
-            # New window for private talk
-            return ('N', 'None')
-        elif data[0] == 'Q':
-            # Quit chat room
-            return ('Q', 'None')
-        elif data[0] == 'W':
-            # Who's online command
-            return ('W', 'None')
-        else:
-            # Command Not Found
-            return ('CNF', 'None')
     
     def _getWindowByName(self, winName):
         for winInfo in self.winList:
             if winName == winInfo[1]:
+                return winInfo[3]
+        return None
+    
+    def _getWindowByPID(self, PID):
+        for winInfo in self.winList:
+            if isinstance(winInfo[3], PriChatWindow) and PID == winInfo[3].priID:
                 return winInfo[3]
         return None
     
@@ -102,18 +82,9 @@ class WinManager():
         """ Run another thread, In newWindow function """
         while True:
             # Get user input from window
-            #data = window.getWindowMsg()
             header, msg = window.getWindowMsg()
-            
             # Send user input to client process
             self.qToClient.put( (header, msg) )
-            #self.qToClient.put( (cmd, winName, msg) )
-            """
-            # Sub Window's thread need to leave
-            if winType != 'Public' and cmd == 'Q':
-                self._delWindowByWID(winID)
-                break
-            """
             
     def _getFromClient(self):
         """ Run another thread, In Run function """
@@ -126,7 +97,7 @@ class WinManager():
             if header.winType == 'Public':
                 win = self._getWindowByName('Hall')
             elif header.winType == 'Private':
-                win = self._getWindowByName(header.sender)
+                win = self._getWindowByPID(header.privateID)
             else:
                 # Group
                 pass
@@ -157,16 +128,18 @@ class WinManager():
                 break
             i+=1
 
-    def newWindow(self, WName, WType):
+    def newWindow(self, WName, WType, PID=None):
         """
         Window Name is Hall or Someone's name
         Window Type is either Public or Private
         """
         if WType == 'Public':
             winObj = ChatWindow(self.winID, WName, WType, Queue(), Queue())
-        else:
+        elif WType == 'Private':
             winObj = PriChatWindow(self._getWindowByName('Hall').mainWindow,
-                                   self.winID, WName, WType, Queue(), Queue())
+                                   PID, self.winID, WName, WType, Queue(), Queue())
+        else:
+            pass
         
         winInfo = (self.winID, WName, WType, winObj)
         self.winList.append(winInfo)

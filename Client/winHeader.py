@@ -16,9 +16,9 @@ class WindowHeader():
         self.winName = wName
         self.winType = wType
         self.command = cmd
-    def setOption(self, sender=None, peer=None, gID=None):
+    def setOption(self, sender=None, pID=None, gID=None):
         self.sender = sender
-        self.peer = peer
+        self.privateID = pID
         self.groupID = gID
     def getHeader(self):
         return (self.winID, self.winName, self.winType, self.command)
