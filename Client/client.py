@@ -83,32 +83,41 @@ class ChatClient():
             # Get data from Window Manager
             header, msg = self.qFromWinMan.get()
             
-            if header.command == 'H':
-                pass
-            elif header.command == 'W':
-                pass
-            elif header.command == 'B':
-                pass
-            elif header.command == 'N':
-                pass
-            elif header.command == 'NREQ':  # msg is " id. name  "
-                pass           
-            elif header.command == 'P':
-                # Name is pair
+            if header.command == 'H':       # Help Command
+                pass                        # msg is None
+            elif header.command == 'W':     # Who's online Command
+                pass                        # msg is None
+            elif header.command == 'B':     # Broadcast Command
+                pass                        # msg is Message
+            elif header.command == 'N':     # Get now who's onlien except self
+                pass                        # msg is None
+            elif header.command == 'NG':    # New Group Room Command
+                pass                        # msg is group name
+            elif header.command == 'NREQ':  # Send the request
+                pass                        # msg is " id. name  "
+            elif header.command == 'P':     # Prviate Message Command
+                # Name is privateID
                 logging.debug(f'{header.privateID}/{self.name}')
-                data = json.dumps( (header.command, f'{header.privateID}/{self.name}', msg) )
+                data = json.dumps( (header.command, header.privateID, msg) )
+                data = data.encode()
+                self.sock.send(data)
+                continue
+            elif header.command == 'G':     # Group Message Command
+                # Name is groupID
+                logging.debug(f'{header.groupID}/{self.name}')
+                data = json.dumps( (header.command, header.groupID, msg) )
                 data = data.encode()
                 self.sock.send(data)
                 continue
             elif header.command == 'PQ':
                 # This means user leave pri room, should talk to server and close window
-                """
-                self.winManager.closeWindow(winName)
-                msg = winName
-                """
                 self.winManager.closeWindowById(header.winID)
                 msg = str(header.privateID)
                 logging.debug(f'In Client After Q, cmd is {header.command}, msg is {msg}')                
+            elif header.command == 'GQ':
+                # This means user leave group room, should talk to server and close window
+                self.winManager.closeWindowById(header.winID)
+                msg = header.groupID
             
             # Transform data
             data = json.dumps( (header.command, self.name, msg) )
@@ -153,14 +162,26 @@ class ChatClient():
                 #self.qToWinMan.put( ('Private', sender, msg) )
             elif cmd == 'PQ':
                 header.setHeader(None, None, 'Private', 'PQ')
-                header.setOption(sender=sender)
+                priID, sender = int(sender.split('/')[0]), sender.split('/')[1]
+                header.setOption(sender=sender, pID=priID)
                 self.qToWinMan.put( (header, msg) )
                 #self.qToWinMan.put( ('Private', sender, msg) )
+            elif cmd == 'G':
+                header.setHeader(None, None, 'Group', 'G')
+                groupID, sender = int(sender.split('/')[0]), sender.split('/')[1]
+                header.setOption(sender=sender, gID=groupID)
+                self.qToWinMan.put( (header,msg) )
+            elif cmd == 'GQ':
+                pass
             elif cmd == 'N':
                 onlineList = msg.split('\n')
                 #logging.debug('In Reply cmd is N, List is {}'.format(onlineList))
                 self.winManager.popUpWindow('AskW', 'Select User', onlineList)
                 pass
+            elif cmd == 'NG':
+                gID, groupName = msg
+                winID = self.winManager.newWindow(groupName, 'Group', GID=gID)
+                self.winManager.activeWindow(winID)
             elif cmd == 'NREQ':
                 #response is yes or no
                 response = self.winManager.popUpWindow('AskQ', 'Privat talk', msg)
@@ -176,8 +197,8 @@ class ChatClient():
                     # Create new Privat Chat Window
                     # Privat Window name is sender name
                     # msg will be PID
-                    self.winManager.newWindow(sender, 'Private', msg)
-                    self.winManager.activeWindow(sender)
+                    winID = self.winManager.newWindow(sender, 'Private', msg)
+                    self.winManager.activeWindow(winID)
             elif cmd == 'ERROR':
                 self.winManager.popUpWindow('Info', 'Can\'t Open Room', msg)
             elif cmd == 'H':
@@ -200,7 +221,7 @@ class ChatClient():
         tS.daemon = True
         tS.start()
         
-        self.winManager.activeWindow('Hall')
+        self.winManager.activeWindow(1) # Hall's winID must 1
         logging.info('Close program...')
         
 if __name__ == '__main__':

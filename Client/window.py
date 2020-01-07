@@ -28,7 +28,6 @@ class ChatWindow():
     One Entry and one button
     """
     def __init__(self, winID, winName, winType,inQueue=Queue(), outQueue=Queue(), BgColor=None):
-        #self.priID, self.groupID = None, None
         self.winID = winID
         self.winName = winName
         self.winType = winType
@@ -90,16 +89,37 @@ class ChatWindow():
             self.QuitFlag = True
             self._sendMessage('Q')
             
-        self.menubar = tk.Menu(self.mainWindow)
+        def getGroupName():
+            groupName = self.popUpWindow('AskS', 'Group Name', 'Enter your group name')
+            self._sendMessage('NG', msg=groupName)
         
+        # Set menubar in mainWindow
+        self.menubar = tk.Menu(self.mainWindow)
+        # Set the Help menu
         self.helpmenu = tk.Menu(self.menubar, tearoff=0)
         self.helpmenu.add_command(label='Get help', command=lambda:self._sendMessage('H'))
         self.helpmenu.add_command(label='Who\'s Online', command=lambda:self._sendMessage('W'))
         self.helpmenu.add_command(label='Talk with...', command=lambda:self._sendMessage('N'))
         self.helpmenu.add_separator()
         self.helpmenu.add_command(label='Exit', command=funExit)
+        # Set the Group menu
+        self.groupmenu = tk.Menu(self.menubar, tearoff=0)
         
+        # Set the Group Info menu
+        """
+        test = ['CSIE', 'C++ Group', 'Python Learning']
+        groupInfo = tk.Menu(self.groupmenu, tearoff=0)
+        for name in test:
+            groupInfo.add_command(label=name, )
+        """
+        
+        self.groupmenu.add_command(label='Show Group')
+        #self.groupmenu.add_cascade(label='Show Group', menu=groupInfo)
+        self.groupmenu.add_command(label='New Group', command=getGroupName)
+        
+        # Place these menu
         self.menubar.add_cascade(label='Help', menu=self.helpmenu)
+        self.menubar.add_cascade(label='Group', menu=self.groupmenu)
         self.mainWindow.config(menu=self.menubar)
     
     def _setWidgetPosition(self):
@@ -119,11 +139,13 @@ class ChatWindow():
         self.mainWindow.protocol('WM_DELETE_WINDOW', self.closeWindow)
     
     """ End Set Function """
-    def _sendMessage(self, cmd, msg=None, PID=None):
+    def _sendMessage(self, cmd, msg=None, PID=None, GID=None):
         header = WindowHeader()
         header.setHeader(self.winID, self.winName, self.winType, cmd)
         if PID:
             header.setOption(pID=PID)
+        if GID:
+            header.setOption(gID=GID)
         
         self.inputQueue.put((header, msg))
         
@@ -135,6 +157,7 @@ class ChatWindow():
                 self.outputText['state'] = tk.NORMAL
                 self.outputText.insert('end', msg, 'server')
                 self.outputText['state'] = tk.DISABLED
+                logging.debug('Window handle Server message: {}'.format(msg))
             else:
                 self.outputText['state'] = tk.NORMAL
                 self.outputText.insert('end', msg)
@@ -151,7 +174,8 @@ class ChatWindow():
             elif self.winType == 'Private':
                 self._sendMessage('P', msg, PID=self.priID)
             else:
-                self._sendMessage('G', msg)
+                # self.winType == 'Group'
+                self._sendMessage('G', msg, GID=self.groupID)
         
     def _insertSelfMsg(self, msg):
         msg += '\n'
@@ -221,12 +245,13 @@ class ChatWindow():
     
     def closeWindow(self):
         if not self.QuitFlag:
+            self.QuitFlag = True
             if self.winType == 'Public':
                 self._sendMessage('Q')
             elif self.winType == 'Private':
                 self._sendMessage('PQ', PID=self.priID)
             else:
-                self._sendMessage('GQ')
+                self._sendMessage('GQ', GID=self.groupID)
         self.mainWindow.destroy()
     
     def runWindow(self):
@@ -265,6 +290,7 @@ class PriChatWindow(ChatWindow):
     
     def _setMenubar(self):
         def funExit():
+            # Close window is managed by Window Manager
             self.QuitFlag = True
             self._sendMessage('PQ', PID=self.priID)
         
@@ -280,6 +306,47 @@ class PriChatWindow(ChatWindow):
         self.menubar.add_cascade(label='Help', menu=self.helpmenu)
         self.mainWindow.config(menu=self.menubar)
     
+    def runWindow(self):
+        # Run Async Output thread
+        tOut = Thread(name='WinAsyncOutput', target=self._asyncInsertOutput)
+        tOut.daemon = True
+        tOut.start()
+        
+"******************************************************************************"
+
+class GroupChatWindow(ChatWindow):
+    def __init__(self, parent, groupID, winID, winName, winType, inQueue=Queue(), outQueue=Queue()):
+        self.parent = parent
+        self.groupID = groupID
+        self.BgColor = '#FFDD55'
+        super().__init__(winID, winName, winType, inQueue, outQueue, self.BgColor)
+        
+    def _setMainWindow(self):
+        self.mainWindow = tk.Toplevel(self.parent)
+        self.mainWindow.title('Group Window')
+        self.mainWindow.geometry('500x450')
+        self.mainWindow['bg'] = self.BgColor
+    
+    def _setWidget(self):
+        super()._setWidget()
+        self.onlineLabel['text'] = self.winName
+    
+    def _setMenubar(self):
+        def funExit():
+            # Close window is managed by Window Manager
+            self.QuitFlag = True
+            self._sendMessage('GQ', GID=self.groupID)
+        
+        self.menubar = tk.Menu(self.mainWindow)
+        
+        self.helpmenu = tk.Menu(self.menubar, tearoff=0)
+        self.helpmenu.add_command(label='Invite', )
+        self.helpmenu.add_separator()
+        self.helpmenu.add_command(label='Exit', command=funExit)
+        
+        self.menubar.add_cascade(label='Manage', menu=self.helpmenu)
+        self.mainWindow.config(menu=self.menubar)
+        
     def runWindow(self):
         # Run Async Output thread
         tOut = Thread(name='WinAsyncOutput', target=self._asyncInsertOutput)

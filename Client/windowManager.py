@@ -31,6 +31,7 @@ Window Manager 用來管理多個視窗的I/O
 """
 from window import ChatWindow
 from window import PriChatWindow
+from window import GroupChatWindow
 from queue import Queue
 from threading import Thread
 from winHeader import WindowHeader
@@ -60,6 +61,14 @@ class WinManager():
         for winInfo in self.winList:
             if isinstance(winInfo[3], PriChatWindow) and PID == winInfo[3].priID:
                 return winInfo[3]
+        logging.error('Get Win PID not found {}'.format(PID))
+        return None
+    
+    def _getWindowByGID(self, GID):
+        for winInfo in self.winList:
+            if isinstance(winInfo[3], GroupChatWindow) and GID == winInfo[3].groupID:
+                return winInfo[3]
+        logging.error('Get Win PID not found {}'.format(GID))
         return None
     
     def _delWindowByWID(self, winID):
@@ -90,34 +99,24 @@ class WinManager():
         """ Run another thread, In Run function """
         while True:
             # Get data from client process 
-            #winType, sender, msg = self.qFromClient.get()
             header, msg = self.qFromClient.get()
             msg = f'[{header.sender:>10s}]:\n    {msg}\n'
-            
+            # Get the correct room
             if header.winType == 'Public':
                 win = self._getWindowByName('Hall')
             elif header.winType == 'Private':
                 win = self._getWindowByPID(header.privateID)
             else:
                 # Group
-                pass
-            #win.putWindowMsg(msg)
-            if win != None:
+                win = self._getWindowByGID(header.groupID)
+            if win:
                 win.outputQueue.put(msg)
 
-    def activeWindow(self, WName):
+    def activeWindow(self, winID):
         for winInfo in self.winList:
-            if winInfo[1] == WName:
+            if winInfo[0] == winID:
                 winInfo[3].runWindow()
-
-    def closeWindow(self, WName):
-        i = 0
-        for winInfo in self.winList:
-            if winInfo[1] == WName:
-                winInfo[3].closeWindow()
-                self.winList.pop(i)
                 break
-            i+=1 
     
     def closeWindowById(self, winID):
         i = 0
@@ -128,7 +127,7 @@ class WinManager():
                 break
             i+=1
 
-    def newWindow(self, WName, WType, PID=None):
+    def newWindow(self, WName, WType, PID=None, GID=None):
         """
         Window Name is Hall or Someone's name
         Window Type is either Public or Private
@@ -139,7 +138,9 @@ class WinManager():
             winObj = PriChatWindow(self._getWindowByName('Hall').mainWindow,
                                    PID, self.winID, WName, WType, Queue(), Queue())
         else:
-            pass
+            # Wtype == 'Group'
+            winObj = GroupChatWindow(self._getWindowByName('Hall').mainWindow,
+                                     GID, self.winID, WName, WType, Queue(), Queue())
         
         winInfo = (self.winID, WName, WType, winObj)
         self.winList.append(winInfo)
@@ -149,9 +150,8 @@ class WinManager():
         tW.daemon = True
         tW.start()
         
-        #logging.info('After new window show now window list information ...')
-        #self._degShowWinList()
-    
+        return self.winID - 1
+        
     def popUpWindow(self, which, title, msg):
         win = self._getWindowByName('Hall')
         return win.popUpWindow(which, title, msg)

@@ -17,27 +17,41 @@ logging.basicConfig(
 class ChatServer():
     def __init__(self):
         self.onlineList = []
-        self.broadcastList = []
-        self.privateList = []
+        self.broadcastList = []     # Elems are person instance
+        self.privateList = []       # Elems are (PID, person1, person2)
+        self.groupList = []         # Elems are ((GID, GroupName), preson1, person2, ...)
         self.sendQueue = queue.Queue()
         self.UID = 1
         self.PID = 1
+        self.GID = 1
         
     def setSockInfo(self, address, port, family=socket.AF_INET, protocol=socket.SOCK_STREAM):
         self.sockInfo = (family, protocol, address, port)
+        return None
     
     """ Function are related to ADD and DELETE  """
     def _addPerson(self, user):
         logging.debug(f'User {user.name} is online...')
         self.onlineList.append(user)
         self.broadcastList.append(user)
+        return None
     
     def _addPairToPriList(self, PID, person1, person2):
         """ person1 and person2 are Person Instance """
         self.privateList.append( (PID, person1, person2) )
         logging.info('{Show Private List}')
         self._degShowPList()
+        return None
 
+    def _addPersonToGroup(self, GID, user):
+        pass
+    
+    def _newGroup(self, user, groupName):
+        # Group should be dynamic adjust
+        self.groupList.append( [ (self.GID, groupName), user ] )
+        self.GID += 1
+        return (self.GID-1, groupName)
+       
     def _userOffline(self, user):
         print(user, 'is offline...')
         # First close socket
@@ -56,6 +70,7 @@ class ChatServer():
         self._deleteFromPriList(UID=user.id)
         # Send offline message to Hall
         self._serverBroadcast('{} has left the chat room!'.format(user.name), user.id)
+        return None
     
     def _deleteFromPriList(self, PID=None, UID=None):
         """
@@ -82,61 +97,126 @@ class ChatServer():
                 i += 1
             for popIdx in popList:
                 self.privateList.pop(popIdx)
+        return None
+    
+    def _deletePersonFromGroupList(self, GID, UID):
+        room = self._getGroupRoomByGID(GID)
+        
+        for idx in range(1, len(room)):
+            if room[idx].id == UID:
+                room.pop(idx)
+                if len(room) == 1:
+                    # No members in group, should be popped
+                    self._deleteGroupFromGroupList(GID)
+                break
+        return None
+
+    def _deleteGroupFromGroupList(self, GID):
+        idx = 0
+        for room in self.groupList:
+            if room[0][0] == GID:
+                self.groupList.pop(idx)
+                break
+            idx += 1
+        return None
     
     """ Function are related to GET """
     def _getPersonByID(self, UID):
         for user in self.onlineList:
             if user.id == UID:
                 return user
-        return None
-
-    def _getPersonByName(self, Name):
-        for user in self.onlineList:
-            if user.name == Name:
-                return user
+        logging.error('Get Person UID {} is None'.format(UID))
         return None
     
     def _getPriRoomByPID(self, PID):
         for room in self.privateList:
             if room[0] == PID:
                 return room
+        logging.error('Get Private PID {} is None'.format(PID))
+        return None
+    
+    def _getGroupRoomByGID(self, GID):
+        for room in self.groupList:
+            if room[0][0] == GID:
+                return room
+        logging.error('Get Group GID {} is None'.format(GID))
         return None
     
     """ Function are related to Debug """
     def _degShowBList(self):
-        print('Now there are these users online...')
+        print('{*** Now show the users are online ***}')
         if not len(self.broadcastList):
             print('Nobody is Online...')
         else:
             for user in self.broadcastList:
                 print(f'{user.id:>2}. {user.name:<10}')
+        return None
         
     def _degShowPList(self):
-        print('Now who in private tlak list...')
+        print('{*** Now show the private tlak list ***}')
         if not len(self.privateList):
             print('  Nobody in Private List...')
         else:
             for pair in self.privateList:
                 print(f'  PID: {pair[0]}, {pair[1].name} and {pair[2].name}')
+        return None
+    
+    def _degShowGList(self):
+        print('{*** Now show the group list ***}')
+        if not len(self.groupList):
+            print('   Nobody in Group List...', end='')
+        else:
+            for room in self.groupList:
+                print('   {}. {}: '.format(room[0][0], room[0][1]), end='')
+                for idx in range(1, len(room)):
+                    print('{} '.format(room[idx]), end='')
+        print()
+        return None
 
     """ Function are related to Send """
-    def _sendPrivateTo(self, PID, senderName, msg, cmd):
+    def _sendPrivateTo(self, PID, sender, msg, cmd):
         # cmd is P or PQ. P is user send; PQ is server send
         room = self._getPriRoomByPID(PID)
+        
+        if cmd == 'P':
+            senderName = sender.name
+        else:
+            senderName = 'Server'
+            
         if room:
             data = json.dumps( (cmd, str(PID)+'/'+senderName, msg) )
             data = data.encode()
             # Find the peer to send
-            if room[1].name != senderName:
+            if room[1].id != sender.id:
                 room[1].sock.send(data)
             else:
                 room[2].sock.send(data)
+        return None
+                
+    def _sendGroupTo(self, GID, sender, msg, cmd):
+        # cmd is G or GQ. G is user send; GQ is server send
+        room = self._getGroupRoomByGID(GID)
+        
+        if cmd == 'G':
+            senderName = sender.name
+        else:
+            senderName = 'Server'
+            
+        if room:
+            data = json.dumps( (cmd, str(GID)+'/'+senderName, msg) )
+            data = data.encode()
+            
+            for idx in range(1, len(room)):     # room[0] is always (GID, groupName)
+                if room[idx].id != sender.id:
+                    room[idx].sock.send(data)
+        return None
 
     def _sendNewPriReq(self, sender, receiver, cmd='NREQ'):
         idAndName = str(sender.id) + '/' + sender.name
         data = json.dumps( (cmd, idAndName, f'{sender.name} want to talk with you.') )
         bdata= data.encode()
         receiver.sock.send(bdata)
+        return None
 
     def _sendHelpMsg(self, user):
         msg = """
@@ -147,6 +227,7 @@ class ChatServer():
         """
         data = json.dumps( ('H', 'Server', msg) )
         user.sock.send(data.encode())
+        return None
             
     def _sendWhoOnline(self, sender, cmd='W'):
         msg = ''
@@ -154,6 +235,7 @@ class ChatServer():
             msg += f'{user.id:>2d}. {user.name:<10s}\n'
         data = json.dumps( (cmd, 'Server', msg) )
         sender.sock.send(data.encode())
+        return None
     
     def _sendWhoOnlineV2(self, sender, cmd='N'):
         msg = ''
@@ -163,6 +245,7 @@ class ChatServer():
             msg += f'{user.id:>2d}. {user.name:<10s}\n'
         data = json.dumps( (cmd, 'Server', msg) )
         sender.sock.send(data.encode())
+        return None
 
     def _broadcast(self):
         while True:
@@ -173,6 +256,7 @@ class ChatServer():
             for user in self.broadcastList:
                 if user.id != uID:
                     user.sock.send(bdata)
+        return None
 
     def _serverBroadcast(self, msg, uID=None):
         data = json.dumps( ('B', 'Server', msg) )
@@ -181,7 +265,8 @@ class ChatServer():
         for user in self.broadcastList:
             if user.id != uID:
                 user.sock.send(bdata)
-                
+        return None
+    
     """ Check function """
     def _checkPriIsExist(self, sender, peer):
         for pair in self.privateList:
@@ -202,7 +287,7 @@ class ChatServer():
             
             if cmd == 'B':
                 """ Boradcast message """
-                self.sendQueue.put( (user.id, sender, msg) )
+                self.sendQueue.put( (user.id, user.name, msg) )
             elif cmd == 'H':
                 """ Help command """
                 self._sendHelpMsg(user)
@@ -210,6 +295,12 @@ class ChatServer():
                 """ Send newest online user message to client """
                 #self._sendWhoOnline(user, cmd)
                 self._sendWhoOnlineV2(user, cmd)
+            elif cmd == 'NG':
+                # Create a new group record
+                groupInfos = self._newGroup(user, msg)      # groupInfos are (GID, groupName)
+                # Send the group information to user
+                data = json.dumps( (cmd, 'Server', groupInfos) )
+                user.sock.send(data.encode())
             elif cmd == 'NREQ':
                 if msg[0] == 'y':    
                     # This belong to another user's response
@@ -242,7 +333,7 @@ class ChatServer():
                     # Before sending the request, check if the room has been open
                     if self._checkPriIsExist(user, peer):
                         # It has been opened
-                        data = json.dumps( ('ERROR', sender, 'You have been token with {}'.format(peer.name)))
+                        data = json.dumps( ('ERROR', user.name, 'You have been token with {}'.format(peer.name)))
                         user.sock.send(data.encode())
                     else:
                         # It is not opened
@@ -250,25 +341,34 @@ class ChatServer():
                 pass
             elif cmd == 'P':
                 """ Private talk command """
-                infos = sender.split('/')   # sender contains PID, senderName
-                priID, sender = int(infos[0]), infos[1]
-                self._sendPrivateTo(priID, sender, msg, cmd)
+                priID = int(sender)
+                self._sendPrivateTo(priID, user, msg, cmd)
+            elif cmd == 'G':
+                """ Group talk command  """
+                groupID = int(sender)
+                self._sendGroupTo(groupID, user, msg, cmd)
             elif cmd == 'Q':
                 """ User need to leave """
                 self._userOffline(user)
-                self._degShowBList()
                 break
             elif cmd == 'PQ':
                 """ User leave Private talk """
                 # msg is PID
                 pID = int(msg)
-                msg = '{} has left the chat room...'.format(sender)
+                msg = '{} has left the chat room...'.format(user.name)
                 # Send PQ to peer
-                self._sendPrivateTo( pID, sender, msg, cmd)
-                # msg is peer's name
+                self._sendPrivateTo( pID, user, msg, cmd)
+                # Delete this person from Private List
                 self._deleteFromPriList(PID=pID)
-                self._degShowPList()
-                
+            elif cmd == 'GQ':
+                """ User leave Group talk """
+                # msg is GID
+                gID = int(msg)
+                msg = '{} has the the chat room...'.format(user.name)
+                # Send GQ to group member
+                self._sendGroupTo(gID, user, msg, cmd)                
+                # Delete this person from Group List
+                self._deletePersonFromGroupList(gID, user.id)
             elif cmd == 'W':
                 """ Who is online command """
                 self._sendWhoOnline(user, cmd)
@@ -282,6 +382,8 @@ class ChatServer():
                 self._degShowBList()
             elif command == 'showP':
                 self._degShowPList()
+            elif command == 'showG':
+                self._degShowGList()
             else:
                 print('Command Not Found...')
     
