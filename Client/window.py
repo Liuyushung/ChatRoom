@@ -15,7 +15,7 @@ from winHeader import WindowHeader
 import logging
 
 logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format='[%(levelname)s]  %(message)s'
         )
 
@@ -73,10 +73,16 @@ class ChatWindow():
                                     font=('Comic Sans MS', 18, 'bold'),
                                     bg=self.BgColor)
         
-        self.outputText = tk.Text(self.frameList[1], font=self.FontSetting, height=17, width=48,
-                                  state=tk.DISABLED, relief='solid')
+        self.scrollbar = tk.Scrollbar(self.frameList[1])
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.outputText = tk.Text(self.frameList[1], font=self.FontSetting, height=17, width=47,
+                                  state=tk.DISABLED, relief='solid',
+                                  yscrollcommand=self.scrollbar.set)
         self.outputText.tag_config('self', foreground='blue', justify=tk.RIGHT)
         self.outputText.tag_config('server', foreground='red')
+        
+        self.scrollbar.config(command=self.outputText.yview)
         
         self.inputEntry = tk.Entry(self.frameList[2], font=self.FontSetting, width=38)
         
@@ -88,10 +94,12 @@ class ChatWindow():
         def funExit():
             self.QuitFlag = True
             self._sendMessage('Q')
+            return None
             
         def getGroupName():
             groupName = self.popUpWindow('AskS', 'Group Name', 'Enter your group name')
             self._sendMessage('NG', msg=groupName)
+            return None
         
         # Set menubar in mainWindow
         self.menubar = tk.Menu(self.mainWindow)
@@ -113,7 +121,7 @@ class ChatWindow():
             groupInfo.add_command(label=name, )
         """
         
-        self.groupmenu.add_command(label='Show Group')
+        self.groupmenu.add_command(label='Show Group', command=lambda:self._sendMessage('SG'))
         #self.groupmenu.add_cascade(label='Show Group', menu=groupInfo)
         self.groupmenu.add_command(label='New Group', command=getGroupName)
         
@@ -126,7 +134,7 @@ class ChatWindow():
         for frame in self.frameList:
             frame.pack()
         self.onlineLabel.pack()
-        self.outputText.pack()
+        self.outputText.pack(side=tk.LEFT,fill=tk.BOTH)
         self.inputEntry.grid(row=1, column=0, columnspan=8)
         self.sendButton.grid(row=1, column=10, columnspan=2, padx=20)
 
@@ -141,12 +149,14 @@ class ChatWindow():
     """ End Set Function """
     def _sendMessage(self, cmd, msg=None, PID=None, GID=None):
         header = WindowHeader()
+        # 設定基本視窗資訊(windowID, windowName, windowType, command)
         header.setHeader(self.winID, self.winName, self.winType, cmd)
+        # 設定視窗Option資訊
         if PID:
             header.setOption(pID=PID)
         if GID:
             header.setOption(gID=GID)
-        
+        # 送出資料
         self.inputQueue.put((header, msg))
         
     def _asyncInsertOutput(self):
@@ -187,7 +197,6 @@ class ChatWindow():
         def sendResultToWinMan():
             # Format of result is " id. UserName    ", Server will use this pattern
             result = getSelected.get()
-            logging.debug('In select pop window get the result is {}'.format(result))
             self._sendMessage('NREQ', msg=result) 
             peerName = result.split('. ')[1].split(' ')[0]
             self.popUpWindow('Info', 'Server Reply', f'Wait for {peerName}\'s answer ...')
@@ -340,13 +349,61 @@ class GroupChatWindow(ChatWindow):
         self.menubar = tk.Menu(self.mainWindow)
         
         self.helpmenu = tk.Menu(self.menubar, tearoff=0)
-        self.helpmenu.add_command(label='Invite', )
+        self.helpmenu.add_command(label='Invite', command=lambda:self._sendMessage('IG', msg='query', GID=self.groupID))
+        self.helpmenu.add_command(label='Members', command=lambda:self._sendMessage('GM', GID=self.groupID))
         self.helpmenu.add_separator()
         self.helpmenu.add_command(label='Exit', command=funExit)
         
         self.menubar.add_cascade(label='Manage', menu=self.helpmenu)
         self.mainWindow.config(menu=self.menubar)
+    
+    def _inviteUserToGroup(self, title, msg):
+        def sendInvite():
+            msg = []
+            for var in tmpTkVarList:
+                if var.get() != -1:
+                    msg.append(var.get())
+            self._sendMessage('IG', msg=msg, GID=self.groupID)
+            popWin.destroy()
+                
+        popWin = tk.Toplevel(self.mainWindow)
+        popWin.title(title)
+        popWin.geometry('300x200')
+        popWin.wm_attributes('-topmost', 1)
+
+        # Set up Label for title
+        tk.Label(popWin, font=self.FontSetting,
+                 text='Select online user\nwhom you want to invite.',
+                 justify=tk.CENTER, pady=5).pack()
         
+        tmpTkVarList = []
+        if msg:
+            # msg is [(UID, Name), ...]
+            # CheckButton
+            for user in msg:
+                tmp = tk.IntVar()
+                tmpTkVarList.append(tmp)
+                tk.Checkbutton(popWin, variable=tmp, text=user[1],
+                               onvalue=user[0], offvalue=-1).pack()
+            # Set up Button for ensure or cancel
+            yesBtn = tk.Button(popWin, text='Send', command=sendInvite)
+            noBtn = tk.Button(popWin, text='Cancel', command=popWin.destroy)
+            yesBtn.pack(side='left')
+            noBtn.pack(side='right')
+        else:
+            self.popUpWindow('Info', 'Invite Failed', 'Nobody else is online...')
+        
+        return None
+    
+    def popUpWindow(self, which, title, msg):
+        if which == 'Invite':
+            self._inviteUserToGroup(title, msg)
+        elif which == 'Members':
+            messagebox.showinfo(title=title, message=msg, parent=self.mainWindow)
+        else:
+            super().popUpWindow(which, title, msg)
+        return None
+    
     def runWindow(self):
         # Run Async Output thread
         tOut = Thread(name='WinAsyncOutput', target=self._asyncInsertOutput)

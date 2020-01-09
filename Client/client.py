@@ -45,7 +45,7 @@ import socket, json, logging, time
 MAXBUF = 1024
 
 logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format='[%(levelname)s]  %(message)s'
         )
 
@@ -56,7 +56,6 @@ class ChatClient():
         self.winManager = WinManager(self.qFromWinMan, self.qToWinMan)
         self.name = None
         self.sock = None
-        self.sockInfo = (socket.AF_INET, socket.SOCK_STREAM, '127.0.0.1', 10732)    
         self.winManager.newWindow('Hall', 'Public')
 
         pass
@@ -65,6 +64,11 @@ class ChatClient():
         self.name = self.winManager.popUpWindow('AskS', 'Name', 'What\'s your name?')
         if not self.name:
             exit(1)
+        return None
+    
+    def setSockInfo(self, address, port, family=socket.AF_INET, protocol=socket.SOCK_STREAM):
+        self.sockInfo = (family, protocol, address, port)
+        return None
 
     def _setUpConnection(self):
         self.sock = socket.socket(*self.sockInfo[:2])
@@ -87,6 +91,10 @@ class ChatClient():
                 pass                        # msg is None
             elif header.command == 'W':     # Who's online Command
                 pass                        # msg is None
+            elif header.command == 'SG':    # Show how many groups are online
+                pass                        # msg is None
+            elif header.command == 'GM':    # Show group members Command
+                pass                        # msg is None
             elif header.command == 'B':     # Broadcast Command
                 pass                        # msg is Message
             elif header.command == 'N':     # Get now who's onlien except self
@@ -105,6 +113,12 @@ class ChatClient():
             elif header.command == 'G':     # Group Message Command
                 # Name is groupID
                 logging.debug(f'{header.groupID}/{self.name}')
+                data = json.dumps( (header.command, header.groupID, msg) )
+                data = data.encode()
+                self.sock.send(data)
+                continue
+            elif header.command == 'IG':    # Invite user to group Command
+                logging.debug(f'{header.groupID}/{msg}')
                 data = json.dumps( (header.command, header.groupID, msg) )
                 data = data.encode()
                 self.sock.send(data)
@@ -144,32 +158,34 @@ class ChatClient():
             if data:
                 data = data.decode()
                 # Data is (Command, Sender's name, Message)
-                cmd, sender, msg = json.loads(data)
-                logging.debug(f'Client get reply from server cmd is {cmd}, sender is {sender}, msg is {msg}')
+                cmd, senderInfo, msg = json.loads(data)
+                logging.debug(f'Client get reply from server cmd is {cmd}, senderInfo is {senderInfo}, msg is {msg}')
             else:
                 # data = ''
                 break
             if cmd == 'B':
+                # SenderInfo is sender's name
                 header.setHeader(None, None, 'Public', 'B')
-                header.setOption(sender=sender)
+                header.setOption(sender=senderInfo)
                 self.qToWinMan.put( (header, msg) )
                 #self.qToWinMan.put( ('Public', sender, msg) )
             elif cmd == 'P':
+                # SenderInfo is PID/SenderName
                 header.setHeader(None, None, 'Private', 'P')
-                priID, sender = int(sender.split('/')[0]), sender.split('/')[1]
-                header.setOption(sender=sender, pID=priID)
+                priID, senderName = int(senderInfo.split('/')[0]), senderInfo.split('/')[1]
+                header.setOption(sender=senderName, pID=priID)
                 self.qToWinMan.put( (header, msg) )
-                #self.qToWinMan.put( ('Private', sender, msg) )
             elif cmd == 'PQ':
                 header.setHeader(None, None, 'Private', 'PQ')
-                priID, sender = int(sender.split('/')[0]), sender.split('/')[1]
-                header.setOption(sender=sender, pID=priID)
+                priID, senderName = int(senderInfo.split('/')[0]), senderInfo.split('/')[1]
+                header.setOption(sender=senderName, pID=priID)
                 self.qToWinMan.put( (header, msg) )
                 #self.qToWinMan.put( ('Private', sender, msg) )
             elif cmd == 'G':
+                # SenderInfo is GID/SenderName
                 header.setHeader(None, None, 'Group', 'G')
-                groupID, sender = int(sender.split('/')[0]), sender.split('/')[1]
-                header.setOption(sender=sender, gID=groupID)
+                groupID, senderName = int(senderInfo.split('/')[0]), senderInfo.split('/')[1]
+                header.setOption(sender=senderName, gID=groupID)
                 self.qToWinMan.put( (header,msg) )
             elif cmd == 'GQ':
                 pass
@@ -183,21 +199,23 @@ class ChatClient():
                 winID = self.winManager.newWindow(groupName, 'Group', GID=gID)
                 self.winManager.activeWindow(winID)
             elif cmd == 'NREQ':
-                #response is yes or no
+                # Response is yes or no
+                # SenderInfo is ID/Name
                 response = self.winManager.popUpWindow('AskQ', 'Privat talk', msg)
-                response = response + '/' + sender  # Response is yes(no)/ID/Name
+                response = response + '/' + senderInfo  # Response is yes(no)/ID/Name
                 data = json.dumps( ('NREQ', self.name, response) )
                 self.sock.send(data.encode())
             elif cmd == 'NREP':
                 if msg == 'Refuse':
                     # Pop refuse Info window
+                    # SenderInfo is senderName
                     self.winManager.popUpWindow('Info', 'Private Talk',
-                                                '{} refuses to talk with you'.format(sender))
+                                                '{} refuses to talk with you'.format(senderInfo))
                 else:
                     # Create new Privat Chat Window
-                    # Privat Window name is sender name
+                    # Privat Window name is sender name, SenderInfo is senderName
                     # msg will be PID
-                    winID = self.winManager.newWindow(sender, 'Private', msg)
+                    winID = self.winManager.newWindow(senderInfo, 'Private', msg)
                     self.winManager.activeWindow(winID)
             elif cmd == 'ERROR':
                 self.winManager.popUpWindow('Info', 'Can\'t Open Room', msg)
@@ -205,6 +223,34 @@ class ChatClient():
                 self.winManager.popUpWindow('Info', 'Help Message', msg)
             elif cmd == 'W':
                 self.winManager.popUpWindow('Info', 'Who\'s Online', msg)
+            elif cmd == 'SG':
+                # SenderInfo is a flag, 1 -> has group info, 0 -> no group info
+                if senderInfo:
+                    groupInfo = ''
+                    for group in msg:
+                        groupInfo += '{}. {}\n    Members: {}'.format(group[0][0], group[0][1], group[1])
+                        groupInfo += '\n'
+                else:
+                    groupInfo = msg
+                self.winManager.popUpWindow('Info', 'Group online', groupInfo)     
+            elif cmd == 'IG':
+                gID = senderInfo
+                self.winManager.popUpWindow('Invite', 'Invite User to Group', msg, GID=gID)
+            elif cmd == 'IGQ':
+                # Invite to Group Query
+                gID, groupName = int(senderInfo.split('/')[0]), senderInfo.split('/')[1]
+                # Get user response which is either yer or no
+                response = self.winManager.popUpWindow('AskQ', 'Invited to Group', msg)
+                if response == 'yes':
+                    data = json.dumps( ('IGQ', gID, 'yes') )
+                    self.sock.send(data.encode())
+                    winID = self.winManager.newWindow(groupName, 'Group', GID=gID)
+                    self.winManager.activeWindow(winID)
+            elif cmd == 'GM':
+                groupInfo = ''
+                for user in msg:
+                    groupInfo += '{}. {}'.format(user[0], user[1])
+                self.winManager.popUpWindow('Members', 'Who in Group', groupInfo)
             else:
                 self.winManager.popUpWindow('Info', 'Command Not Found!!', 'Try to type /H to get help.')
             
@@ -226,4 +272,17 @@ class ChatClient():
         
 if __name__ == '__main__':
     Client = ChatClient()
+    Client.setSockInfo('127.0.0.1', 10732)
     Client.Run()
+    
+    """
+    parser = argparse.ArgumentParser(description='This is Chat Room Client')
+    parser.add_argument('host', help='Input the host address')
+    parser.add_argument('-p', metavar='Port', help='Choose the port which the server is listening at')
+    
+    args = parser.parse_args()
+    Client = ChatClient()
+    Client.setSockInfo(parser.host, parser.p)
+    Client.Run()
+    
+    """

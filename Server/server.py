@@ -6,11 +6,11 @@ Created on Fri Dec 20 15:51:39 2019
 """
 from person import Person
 import json, socket, logging
-import threading, queue
+import threading, queue, argparse
 
 MAXBUF = 1024
 logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format='[%(levelname)s]  %(message)s'
         )
 
@@ -44,7 +44,10 @@ class ChatServer():
         return None
 
     def _addPersonToGroup(self, GID, user):
-        pass
+        groupRoom = self._getGroupRoomByGID(GID)
+        groupRoom.append(user)
+        self._sendGroupTo(GID, user, 'Welcome {} join the group!'.format(user.name))
+        return None        
     
     def _newGroup(self, user, groupName):
         # Group should be dynamic adjust
@@ -125,21 +128,21 @@ class ChatServer():
         for user in self.onlineList:
             if user.id == UID:
                 return user
-        logging.error('Get Person UID {} is None'.format(UID))
+        #logging.error('Get Person UID {} is None'.format(UID))
         return None
     
     def _getPriRoomByPID(self, PID):
         for room in self.privateList:
             if room[0] == PID:
                 return room
-        logging.error('Get Private PID {} is None'.format(PID))
+        #logging.error('Get Private PID {} is None'.format(PID))
         return None
     
     def _getGroupRoomByGID(self, GID):
         for room in self.groupList:
             if room[0][0] == GID:
                 return room
-        logging.error('Get Group GID {} is None'.format(GID))
+        #logging.error('Get Group GID {} is None'.format(GID))
         return None
     
     """ Function are related to Debug """
@@ -169,7 +172,7 @@ class ChatServer():
             for room in self.groupList:
                 print('   {}. {}: '.format(room[0][0], room[0][1]), end='')
                 for idx in range(1, len(room)):
-                    print('{} '.format(room[idx]), end='')
+                    print('{} '.format(room[idx].name), end='')
         print()
         return None
 
@@ -193,7 +196,7 @@ class ChatServer():
                 room[2].sock.send(data)
         return None
                 
-    def _sendGroupTo(self, GID, sender, msg, cmd):
+    def _sendGroupTo(self, GID, sender, msg, cmd=None):
         # cmd is G or GQ. G is user send; GQ is server send
         room = self._getGroupRoomByGID(GID)
         
@@ -217,7 +220,17 @@ class ChatServer():
         bdata= data.encode()
         receiver.sock.send(bdata)
         return None
-
+    
+    def _sendInviteGroup(self, sender, GID, invitedList, cmd='IGQ'):
+        groupName = self._getGroupRoomByGID(GID)[0][1]
+        msg = '{} invite you to his group {}'.format(
+                sender.name, groupName)
+        data = json.dumps( (cmd, str(GID)+'/'+groupName, msg) )
+        data = data.encode()
+        for uID in invitedList:
+            self._getPersonByID(uID).sock.send(data)
+        return None
+    
     def _sendHelpMsg(self, user):
         msg = """
         Help Prompt
@@ -244,6 +257,44 @@ class ChatServer():
                 continue
             msg += f'{user.id:>2d}. {user.name:<10s}\n'
         data = json.dumps( (cmd, 'Server', msg) )
+        sender.sock.send(data.encode())
+        return None
+    
+    def _sendWhoOnlineV3(self, sender, GID, cmd='IG'):
+        msg = []
+        for user in self.onlineList:
+            if user.id == sender.id:
+                continue
+            msg.append( (user.id, user.name) )
+        data = json.dumps( (cmd, GID, msg ) )
+        sender.sock.send(data.encode())
+        return None
+    
+    def _sendWhoInGroup(self, sender, GID, cmd='GM'):
+        msg = []
+        groupRoom = self._getGroupRoomByGID(GID)
+        if groupRoom:
+            for idx in range(1, len(groupRoom)):
+                msg.append( (groupRoom[idx].id, groupRoom[idx].name) )
+            data = json.dumps( (cmd, None, msg) )
+            sender.sock.send(data.encode())
+        return None
+    
+    def _sendGroupInfos(self, sender, cmd='SG'):
+        msg = []
+        hasGroupFlag = None
+        if len(self.groupList) != 0:
+            hasGroupFlag = 1
+            for group in self.groupList:
+                personList = ''
+                for idx in range(1, len(group)):
+                    personList += group[idx].name + ' '
+                msg.append( (group[0], personList) )
+        else:
+            hasGroupFlag = 0
+            msg = 'There are no group online...'
+        print(msg)
+        data = json.dumps( (cmd, hasGroupFlag, msg ) )
         sender.sock.send(data.encode())
         return None
 
@@ -293,7 +344,6 @@ class ChatServer():
                 self._sendHelpMsg(user)
             elif cmd == 'N':
                 """ Send newest online user message to client """
-                #self._sendWhoOnline(user, cmd)
                 self._sendWhoOnlineV2(user, cmd)
             elif cmd == 'NG':
                 # Create a new group record
@@ -372,6 +422,27 @@ class ChatServer():
             elif cmd == 'W':
                 """ Who is online command """
                 self._sendWhoOnline(user, cmd)
+            elif cmd == 'SG':
+                """ Show how many groups are online """
+                self._sendGroupInfos(user)
+            elif cmd == 'GM':
+                """ Show who in the group """
+                gID = sender
+                self._sendWhoInGroup(user, gID, cmd='GM')
+            elif cmd == 'IG':
+                gID = sender
+                if msg == 'query':
+                    # Query how many user are online
+                    self._sendWhoOnlineV3(user, gID, cmd)
+                else:
+                    logging.debug('IG msg is {}'.format(msg))
+                    # Send the Invite Group Query to user in the invited list
+                    # msg is [UID, UID....]
+                    self._sendInviteGroup(user, gID, msg, cmd='IGQ')
+            elif cmd == 'IGQ':
+                gID = sender
+                if msg == 'yes':
+                    self._addPersonToGroup(gID, user)
             else:
                 self._sendCmdNotFound(user)
     
@@ -426,3 +497,14 @@ if __name__ == '__main__':
     Server = ChatServer()
     Server.setSockInfo('127.0.0.1', 10732)
     Server.Run()
+    
+    """
+    parser = argparse.ArgumentParser(description='This is Chat Room Server')
+    parser.add_argument('host', help='Input the host address')
+    parser.add_argument('-p', metavar='Port', help='Choose the port which the server will listen at')
+    
+    args = parser.parse_args()
+    Server = ChatServer()
+    Server.setSockInfo(parser.host, parser.p)
+    Server.Run()
+    """

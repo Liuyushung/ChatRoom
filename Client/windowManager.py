@@ -38,7 +38,7 @@ from winHeader import WindowHeader
 import logging
 
 logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format='[%(levelname)s]  %(message)s'
         )
 
@@ -152,8 +152,11 @@ class WinManager():
         
         return self.winID - 1
         
-    def popUpWindow(self, which, title, msg):
-        win = self._getWindowByName('Hall')
+    def popUpWindow(self, which, title, msg, GID=None):
+        if GID:
+            win = self._getWindowByGID(GID)
+        else:
+            win = self._getWindowByName('Hall')
         return win.popUpWindow(which, title, msg)
     
     def Run(self):
