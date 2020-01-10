@@ -16,6 +16,3 @@ class Person():
             return 'ID: {}. Name: {}'.format(self.id, self.name)
         else:
             return 'Person is not initialized'
-
-def formatToWindow(data):
-    pass

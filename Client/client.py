@@ -40,12 +40,12 @@ from windowManager import WinManager
 from threading import Thread
 from queue import Queue
 from winHeader import WindowHeader
-import socket, json, logging, time
+import socket, json, logging, time, argparse
 
 MAXBUF = 1024
 
 logging.basicConfig(
-        level=logging.INFO,
+        level=logging.ERROR,
         format='[%(levelname)s]  %(message)s'
         )
 
@@ -93,8 +93,6 @@ class ChatClient():
                 pass                        # msg is None
             elif header.command == 'SG':    # Show how many groups are online
                 pass                        # msg is None
-            elif header.command == 'GM':    # Show group members Command
-                pass                        # msg is None
             elif header.command == 'B':     # Broadcast Command
                 pass                        # msg is Message
             elif header.command == 'N':     # Get now who's onlien except self
@@ -103,6 +101,10 @@ class ChatClient():
                 pass                        # msg is group name
             elif header.command == 'NREQ':  # Send the request
                 pass                        # msg is " id. name  "
+            elif header.command == 'GM':    # Show group members Command
+                data = json.dumps( (header.command, header.groupID, None) ).encode()
+                self.sock.send(data)
+                continue
             elif header.command == 'P':     # Prviate Message Command
                 # Name is privateID
                 logging.debug(f'{header.privateID}/{self.name}')
@@ -176,6 +178,7 @@ class ChatClient():
                 header.setOption(sender=senderName, pID=priID)
                 self.qToWinMan.put( (header, msg) )
             elif cmd == 'PQ':
+                # SenderInfo is PID/SenderName
                 header.setHeader(None, None, 'Private', 'PQ')
                 priID, senderName = int(senderInfo.split('/')[0]), senderInfo.split('/')[1]
                 header.setOption(sender=senderName, pID=priID)
@@ -188,7 +191,11 @@ class ChatClient():
                 header.setOption(sender=senderName, gID=groupID)
                 self.qToWinMan.put( (header,msg) )
             elif cmd == 'GQ':
-                pass
+                # SenderInfo is GID/SenderName
+                header.setHeader(None, None, 'Group', 'G')
+                groupID, senderName = int(senderInfo.split('/')[0]), senderInfo.split('/')[1]
+                header.setOption(sender=senderName, gID=groupID)
+                self.qToWinMan.put( (header,msg) )
             elif cmd == 'N':
                 onlineList = msg.split('\n')
                 #logging.debug('In Reply cmd is N, List is {}'.format(onlineList))
@@ -248,9 +255,10 @@ class ChatClient():
                     self.winManager.activeWindow(winID)
             elif cmd == 'GM':
                 groupInfo = ''
+                gID = senderInfo
                 for user in msg:
-                    groupInfo += '{}. {}'.format(user[0], user[1])
-                self.winManager.popUpWindow('Members', 'Who in Group', groupInfo)
+                    groupInfo += '{}. {}\n'.format(user[0], user[1])
+                self.winManager.popUpWindow('Members', 'Who in Group', groupInfo, GID=gID)
             else:
                 self.winManager.popUpWindow('Info', 'Command Not Found!!', 'Try to type /H to get help.')
             
@@ -271,6 +279,7 @@ class ChatClient():
         logging.info('Close program...')
         
 if __name__ == '__main__':
+    """
     Client = ChatClient()
     Client.setSockInfo('127.0.0.1', 10732)
     Client.Run()
@@ -278,11 +287,10 @@ if __name__ == '__main__':
     """
     parser = argparse.ArgumentParser(description='This is Chat Room Client')
     parser.add_argument('host', help='Input the host address')
-    parser.add_argument('-p', metavar='Port', help='Choose the port which the server is listening at')
+    parser.add_argument('-p', metavar='Port', type=int,
+                        help='Choose the port which the server is listening at')
     
     args = parser.parse_args()
     Client = ChatClient()
-    Client.setSockInfo(parser.host, parser.p)
+    Client.setSockInfo(args.host, args.p)
     Client.Run()
-    
-    """

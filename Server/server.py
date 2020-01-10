@@ -46,7 +46,12 @@ class ChatServer():
     def _addPersonToGroup(self, GID, user):
         groupRoom = self._getGroupRoomByGID(GID)
         groupRoom.append(user)
-        self._sendGroupTo(GID, user, 'Welcome {} join the group!'.format(user.name))
+        
+        # Send Welcom message
+        msg = 'Welcome {} join the group!'.format(user.name)
+        data = json.dumps( ('G', str(GID)+'/Server', msg) ).encode()
+        for idx in range(1, len(groupRoom)):
+            groupRoom[idx].sock.send(data)        
         return None        
     
     def _newGroup(self, user, groupName):
@@ -196,7 +201,7 @@ class ChatServer():
                 room[2].sock.send(data)
         return None
                 
-    def _sendGroupTo(self, GID, sender, msg, cmd=None):
+    def _sendGroupTo(self, GID, sender, msg, cmd):
         # cmd is G or GQ. G is user send; GQ is server send
         room = self._getGroupRoomByGID(GID)
         
@@ -236,6 +241,7 @@ class ChatServer():
         Help Prompt
         You can talk to everyone in the hall.
         You can choose one user to chat in another private room.
+        You can create group in the hall and invite other users in the group
         But you can't leave the hall.
         """
         data = json.dumps( ('H', 'Server', msg) )
@@ -262,10 +268,10 @@ class ChatServer():
     
     def _sendWhoOnlineV3(self, sender, GID, cmd='IG'):
         msg = []
+        groupRoom = self._getGroupRoomByGID(GID)
         for user in self.onlineList:
-            if user.id == sender.id:
-                continue
-            msg.append( (user.id, user.name) )
+            if user not in groupRoom:
+                msg.append( (user.id, user.name) )
         data = json.dumps( (cmd, GID, msg ) )
         sender.sock.send(data.encode())
         return None
@@ -276,8 +282,10 @@ class ChatServer():
         if groupRoom:
             for idx in range(1, len(groupRoom)):
                 msg.append( (groupRoom[idx].id, groupRoom[idx].name) )
-            data = json.dumps( (cmd, None, msg) )
+            data = json.dumps( (cmd, GID, msg) )
             sender.sock.send(data.encode())
+        else:
+            logging.error('{} is not found!!'.format(GID))
         return None
     
     def _sendGroupInfos(self, sender, cmd='SG'):
@@ -414,7 +422,7 @@ class ChatServer():
                 """ User leave Group talk """
                 # msg is GID
                 gID = int(msg)
-                msg = '{} has the the chat room...'.format(user.name)
+                msg = '{} has left the group...'.format(user.name)
                 # Send GQ to group member
                 self._sendGroupTo(gID, user, msg, cmd)                
                 # Delete this person from Group List
@@ -494,6 +502,7 @@ class ChatServer():
 """ End Chat Server """
 
 if __name__ == '__main__':
+    """
     Server = ChatServer()
     Server.setSockInfo('127.0.0.1', 10732)
     Server.Run()
@@ -501,10 +510,10 @@ if __name__ == '__main__':
     """
     parser = argparse.ArgumentParser(description='This is Chat Room Server')
     parser.add_argument('host', help='Input the host address')
-    parser.add_argument('-p', metavar='Port', help='Choose the port which the server will listen at')
+    parser.add_argument('-p', metavar='Port', type=int
+                        , help='Choose the port which the server will listen at')
     
     args = parser.parse_args()
     Server = ChatServer()
-    Server.setSockInfo(parser.host, parser.p)
+    Server.setSockInfo(args.host, args.p)
     Server.Run()
-    """

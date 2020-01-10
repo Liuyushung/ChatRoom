@@ -98,7 +98,8 @@ class ChatWindow():
             
         def getGroupName():
             groupName = self.popUpWindow('AskS', 'Group Name', 'Enter your group name')
-            self._sendMessage('NG', msg=groupName)
+            if groupName:
+                self._sendMessage('NG', msg=groupName)
             return None
         
         # Set menubar in mainWindow
@@ -361,23 +362,23 @@ class GroupChatWindow(ChatWindow):
         def sendInvite():
             msg = []
             for var in tmpTkVarList:
-                if var.get() != -1:
+                if var.get() > 0:
                     msg.append(var.get())
             self._sendMessage('IG', msg=msg, GID=self.groupID)
             popWin.destroy()
-                
-        popWin = tk.Toplevel(self.mainWindow)
-        popWin.title(title)
-        popWin.geometry('300x200')
-        popWin.wm_attributes('-topmost', 1)
 
-        # Set up Label for title
-        tk.Label(popWin, font=self.FontSetting,
-                 text='Select online user\nwhom you want to invite.',
-                 justify=tk.CENTER, pady=5).pack()
-        
-        tmpTkVarList = []
-        if msg:
+        if msg:                
+            popWin = tk.Toplevel(self.mainWindow)
+            popWin.title(title)
+            popWin.geometry('300x200')
+            popWin.wm_attributes('-topmost', 1)
+    
+            # Set up Label for title
+            tk.Label(popWin, font=self.FontSetting,
+                     text='Select online user\nwhom you want to invite.',
+                     justify=tk.CENTER, pady=5).pack()
+            
+            tmpTkVarList = []
             # msg is [(UID, Name), ...]
             # CheckButton
             for user in msg:
@@ -391,7 +392,7 @@ class GroupChatWindow(ChatWindow):
             yesBtn.pack(side='left')
             noBtn.pack(side='right')
         else:
-            self.popUpWindow('Info', 'Invite Failed', 'Nobody else is online...')
+            self.popUpWindow('Info', 'Invite Failed', 'Nobody else is online or every users are in your group...')
         
         return None
     
