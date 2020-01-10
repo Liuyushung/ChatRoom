@@ -61,7 +61,6 @@ class ChatServer():
         return (self.GID-1, groupName)
        
     def _userOffline(self, user):
-        print(user, 'is offline...')
         # First close socket
         user.sock.close()
         # Second delete from Online list
@@ -301,7 +300,6 @@ class ChatServer():
         else:
             hasGroupFlag = 0
             msg = 'There are no group online...'
-        print(msg)
         data = json.dumps( (cmd, hasGroupFlag, msg ) )
         sender.sock.send(data.encode())
         return None
@@ -471,15 +469,15 @@ class ChatServer():
         listenSock = socket.socket(*self.sockInfo[:2])
         listenSock.bind(self.sockInfo[2:])
         listenSock.listen(5)
-        print('Server active...\nListen at {}:{}...'.format(*self.sockInfo[2:]))
+        #print('Server active...\nListen at {}:{}...'.format(*self.sockInfo[2:]))
         
         tB = threading.Thread(name='ServerBroadcast', target=self._broadcast)
         tB.daemon = True
         tB.start()
         
-        tS = threading.Thread(name='SuperUser', target=self._SuperUser)
-        tS.daemon = True
-        tS.start()
+        #tS = threading.Thread(name='SuperUser', target=self._SuperUser)
+        #tS.daemon = True
+        #tS.start()
         
         while True:
             #print('Waiting for connection...')
@@ -508,12 +506,15 @@ if __name__ == '__main__':
     Server.Run()
     
     """
-    parser = argparse.ArgumentParser(description='This is Chat Room Server')
-    parser.add_argument('host', help='Input the host address')
-    parser.add_argument('-p', metavar='Port', type=int
-                        , help='Choose the port which the server will listen at')
-    
-    args = parser.parse_args()
-    Server = ChatServer()
-    Server.setSockInfo(args.host, args.p)
-    Server.Run()
+    try:
+        parser = argparse.ArgumentParser(description='This is Chat Room Server')
+        parser.add_argument('host', help='Input the host address')
+        parser.add_argument('-p', metavar='Port', type=int
+                            , help='Choose the port which the server will listen at')
+        
+        args = parser.parse_args()
+        Server = ChatServer()
+        Server.setSockInfo(args.host, args.p)
+        Server.Run()
+    except KeyboardInterrupt:
+        pass
