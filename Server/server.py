@@ -467,6 +467,7 @@ class ChatServer():
     """ Public Function """
     def Run(self):
         listenSock = socket.socket(*self.sockInfo[:2])
+        listenSock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listenSock.bind(self.sockInfo[2:])
         listenSock.listen(5)
         #print('Server active...\nListen at {}:{}...'.format(*self.sockInfo[2:]))

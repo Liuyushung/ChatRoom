@@ -285,6 +285,7 @@ if __name__ == '__main__':
     Client.Run()
     
     """
+    """
     parser = argparse.ArgumentParser(description='This is Chat Room Client')
     parser.add_argument('host', help='Input the host address')
     parser.add_argument('-p', metavar='Port', type=int,
@@ -293,4 +294,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     Client = ChatClient()
     Client.setSockInfo(args.host, args.p)
+    Client.Run()
+    """
+    Client = ChatClient()
+    Client.setSockInfo('163.22.20.103', 10732)
     Client.Run()
