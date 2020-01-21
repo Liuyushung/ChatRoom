@@ -208,7 +208,7 @@ class ChatClient():
             elif cmd == 'NREQ':
                 # Response is yes or no
                 # SenderInfo is ID/Name
-                response = self.winManager.popUpWindow('AskQ', 'Privat talk', msg)
+                response = self.winManager.popUpWindow('AskQ', 'Private talk', msg)
                 response = response + '/' + senderInfo  # Response is yes(no)/ID/Name
                 data = json.dumps( ('NREQ', self.name, response) )
                 self.sock.send(data.encode())

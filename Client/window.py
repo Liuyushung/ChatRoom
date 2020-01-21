@@ -114,16 +114,7 @@ class ChatWindow():
         # Set the Group menu
         self.groupmenu = tk.Menu(self.menubar, tearoff=0)
         
-        # Set the Group Info menu
-        """
-        test = ['CSIE', 'C++ Group', 'Python Learning']
-        groupInfo = tk.Menu(self.groupmenu, tearoff=0)
-        for name in test:
-            groupInfo.add_command(label=name, )
-        """
-        
         self.groupmenu.add_command(label='Show Group', command=lambda:self._sendMessage('SG'))
-        #self.groupmenu.add_cascade(label='Show Group', menu=groupInfo)
         self.groupmenu.add_command(label='New Group', command=getGroupName)
         
         # Place these menu
